@@ -6,7 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-use super::message::Message;
+use crate::llm::Message;
 
 const CONVERSATIONS_DIR: &str = "conversations";
 
@@ -95,8 +95,8 @@ impl Conversation {
         &self.metadata
     }
 
-    /// Add a message to the conversation history
-    pub fn add_message(&mut self, message: Message) -> Result<()> {
+    /// Add a message to the conversation history (raw, Anthropic format)
+    pub fn add_message_raw(&mut self, message: &Message) -> Result<()> {
         tracing::debug!(
             "Adding {} message to conversation {}",
             message.role,
@@ -111,7 +111,7 @@ impl Conversation {
             .open(&history_path)
             .with_context(|| format!("Failed to open history file: {:?}", history_path))?;
 
-        let json = message.to_json().context("Failed to serialize message")?;
+        let json = serde_json::to_string(message).context("Failed to serialize message")?;
         writeln!(file, "{}", json)
             .with_context(|| format!("Failed to write to history file: {:?}", history_path))?;
 
@@ -124,14 +124,14 @@ impl Conversation {
         Ok(())
     }
 
-    /// Add a user message
+    /// Add a user message (simple text)
     pub fn add_user_message(&mut self, content: impl Into<String>) -> Result<()> {
-        self.add_message(Message::user(content))
+        self.add_message_raw(&Message::user(content))
     }
 
-    /// Add an assistant message
+    /// Add an assistant message (simple text)
     pub fn add_assistant_message(&mut self, content: impl Into<String>) -> Result<()> {
-        self.add_message(Message::assistant(content))
+        self.add_message_raw(&Message::assistant(content))
     }
 
     /// Get all messages from the conversation history
@@ -154,7 +154,7 @@ impl Conversation {
                 continue;
             }
 
-            let message = Message::from_json(&line)
+            let message: Message = serde_json::from_str(&line)
                 .with_context(|| format!("Failed to parse message on line {}", line_num + 1))?;
 
             messages.push(message);

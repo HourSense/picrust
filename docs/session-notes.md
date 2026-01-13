@@ -381,3 +381,185 @@ tail -f logs/agent.log
 # Should show: "Retrieved X previous messages from conversation history"
 # Should show: "Calling Anthropic API with X total messages..."
 ```
+
+---
+
+## 2026-01-14: Major Architecture Redesign - Tool Calling System
+
+### Overview
+
+Complete rewrite of the agent architecture to support tool calling with permissions. Replaced the community Anthropic SDK with direct HTTP API calls.
+
+### Key Changes
+
+1. **Removed Community SDK**: Replaced `anthropic-sdk-rust` with `reqwest` for direct HTTP calls to the Anthropic API. This gives us full control over the API format and removes dependency on community-maintained code.
+
+2. **New Type System** (`src/llm/types.rs`):
+   - `Message`: Anthropic-compatible with content blocks
+   - `ContentBlock`: Enum with `Text`, `ToolUse`, `ToolResult`, `Thinking`, `RedactedThinking`
+   - `MessageContent`: Can be simple string or array of content blocks
+   - `ToolDefinition`: Custom tools with JSON schema
+   - `ToolChoice`: Auto, Any, Tool, None
+   - `MessageRequest`/`MessageResponse`: Full API types
+
+3. **HTTP Client** (`src/llm/anthropic.rs`):
+   - Direct HTTP calls to `https://api.anthropic.com/v1/messages`
+   - `send_message()`: Simple text-only conversations
+   - `send_with_tools()`: Full tool calling support
+   - Proper header handling (x-api-key, anthropic-version)
+
+4. **Tool System** (`src/tools/`):
+   - `Tool` trait: Interface for all tools
+   - `ToolRegistry`: Holds and manages tools
+   - `ToolResult`: Success/error results from tools
+   - `ToolInfo`: Human-readable info for permission prompts
+
+5. **Bash Tool** (`src/tools/bash.rs`):
+   - Executes shell commands
+   - No session persistence (fresh shell each time)
+   - Configurable working directory
+   - Output truncation for long results
+
+6. **File Edit Tool** (`src/tools/file_edit.rs`):
+   - `view`: Read files with line numbers
+   - `create`: Create new files
+   - `str_replace`: Replace text (exact match, single occurrence)
+   - `glob`: Search files by pattern
+   - `insert`: Insert text at line number
+
+7. **Permission System** (`src/permissions/`):
+   - `PermissionRequest`: Describes what the tool wants to do
+   - `PermissionDecision`: Allow, Deny, AlwaysAllow, AlwaysDeny
+   - `PermissionManager`: Tracks auto-allow/deny decisions
+
+8. **Context Manager** (`src/context/`):
+   - Manages system prompt and hidden context
+   - `ContextProvider` trait for dynamic context injection
+   - `FileStructureProvider`: Provides project tree
+   - `GitStatusProvider`: Provides git status
+   - Extensible for future context sources
+
+9. **Updated Console** (`src/cli/console.rs`):
+   - `ask_permission()`: Interactive permission prompts
+   - `print_tool_action()`: Shows tool usage
+   - `print_tool_result()`: Shows tool output
+
+10. **Agent Loop Rewrite** (`src/agent/agent_loop.rs`):
+    - **Outer loop**: User conversation (user input → agent response)
+    - **Inner loop**: Tool execution (agent requests tools → execute → continue)
+    - Proper message history with content blocks
+    - Maximum tool iterations limit (50)
+
+11. **Conversation Storage**:
+    - Now stores full Anthropic message format
+    - Supports content blocks (tool_use, tool_result, etc.)
+    - JSONL format preserved
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        User Input                           │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Agent (Outer Loop)                      │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │                Process Turn                          │   │
+│  │  ┌─────────────────────────────────────────────┐    │   │
+│  │  │              Inner Loop                      │    │   │
+│  │  │  1. Send to LLM with tools                  │    │   │
+│  │  │  2. Process response                        │    │   │
+│  │  │  3. If tool_use:                            │    │   │
+│  │  │     - Check permission                      │    │   │
+│  │  │     - Execute tool                          │    │   │
+│  │  │     - Add tool_result                       │    │   │
+│  │  │     - Continue loop                         │    │   │
+│  │  │  4. If end_turn: break                      │    │   │
+│  │  └─────────────────────────────────────────────┘    │   │
+│  └─────────────────────────────────────────────────────┘   │
+│  Save conversation history                                  │
+└─────────────────────────────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────┐
+│                     Assistant Output                        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Files Created/Modified
+
+**New Files:**
+- `src/llm/types.rs` - Anthropic API types
+- `src/tools/mod.rs` - Tools module
+- `src/tools/tool.rs` - Tool trait
+- `src/tools/registry.rs` - Tool registry
+- `src/tools/bash.rs` - Bash tool
+- `src/tools/file_edit.rs` - File edit tool
+- `src/permissions/mod.rs` - Permissions module
+- `src/permissions/manager.rs` - Permission manager
+- `src/context/mod.rs` - Context module
+- `src/context/manager.rs` - Context manager
+- `src/context/providers.rs` - Context providers
+- `src/agent/system_prompt.rs` - Default system prompt
+
+**Modified Files:**
+- `Cargo.toml` - Replaced anthropic-sdk-rust with reqwest, added async-trait, glob
+- `src/lib.rs` - Added new modules
+- `src/llm/mod.rs` - Export new types
+- `src/llm/anthropic.rs` - Rewritten with HTTP client
+- `src/cli/console.rs` - Added permission prompts
+- `src/agent/mod.rs` - Export system prompt
+- `src/agent/agent_loop.rs` - Complete rewrite with tool loop
+- `src/conversation/message.rs` - Re-exports from llm::types
+- `src/conversation/conversation.rs` - Updated for new Message type
+- `src/main.rs` - Updated to use new Agent constructor
+
+### Dependencies
+
+**Added:**
+- `reqwest` v0.11 - HTTP client
+- `async-trait` v0.1 - Async trait support
+- `glob` v0.3 - File pattern matching
+
+**Removed:**
+- `anthropic-sdk-rust` - Community SDK
+
+### Usage
+
+Run the agent:
+```bash
+ANTHROPIC_API_KEY=your-key cargo run
+```
+
+The agent will:
+1. Start a conversation loop
+2. Accept user input
+3. Call Claude with tool definitions
+4. When Claude requests a tool:
+   - Show permission prompt
+   - Execute tool (if allowed)
+   - Continue conversation
+5. Display final response
+
+### Testing
+
+```bash
+# Build
+cargo build
+
+# Run
+cargo run
+
+# Example interaction:
+> list the files in this directory
+# Agent will use bash tool with 'ls' command
+# Permission prompt appears
+# After approval, shows file list
+```
+
+### Build Status
+✅ Compiles successfully
+✅ All major components implemented
+✅ Ready for testing

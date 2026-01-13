@@ -4,14 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# Anthropic SDK for LLM interaction
-anthropic-sdk-rust = "0.1.0"
+# HTTP client for Anthropic API
+reqwest = { version = "0.11", features = ["json"] }
 
 # Async runtime
-tokio = { version = "1.0", features = ["full"] }
+tokio = { version = "1.0", features = ["full", "process"] }
 
 # Stream handling
 futures = "0.3"
+
+# Async trait support
+async-trait = "0.1"
+
+# Glob pattern matching for file tools
+glob = "0.3"
 
 # Terminal colors and formatting
 colored = "2.0"
@@ -32,3 +38,4 @@ tracing-appender = "0.2"
 # Conversation management
 uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+tempfile = "3.24.0"

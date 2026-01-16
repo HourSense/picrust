@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::process::Stdio;
 use tokio::process::Command;
 
-use super::tool::{Tool, ToolInfo, ToolResult};
+use super::super::tool::{Tool, ToolInfo, ToolResult};
 use crate::llm::{ToolDefinition, ToolInputSchema};
 
 /// Grep tool for content search

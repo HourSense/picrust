@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{Arc, RwLock};
 
-use super::tool::{Tool, ToolInfo, ToolResult};
+use super::super::tool::{Tool, ToolInfo, ToolResult};
 use crate::llm::{ToolDefinition, ToolInputSchema};
 
 /// Status of a todo item

@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
 
-use super::tool::{Tool, ToolInfo, ToolResult};
+use super::super::tool::{Tool, ToolInfo, ToolResult};
 use crate::llm::{ToolDefinition, ToolInputSchema};
 
 /// Edit tool for string replacement in files

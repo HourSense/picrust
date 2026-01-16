@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::Path;
 
-use super::tool::{Tool, ToolInfo, ToolResult};
+use super::super::tool::{Tool, ToolInfo, ToolResult};
 use crate::llm::{ToolDefinition, ToolInputSchema};
 
 /// Glob tool for file pattern matching

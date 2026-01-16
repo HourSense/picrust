@@ -1,24 +1,23 @@
-//! Tool system for the agent
+//! Tool system for the agent framework
 //!
-//! This module provides the Tool trait and ToolRegistry for managing
-//! tools that the agent can use.
+//! This module provides:
+//! - `Tool` trait - Interface for implementing tools
+//! - `ToolResult` - Result type for tool execution
+//! - `ToolRegistry` - Registry for managing available tools
+//! - `common` - Built-in tools (Bash, Read, Write, Edit, Glob, Grep, Todo)
 
-pub mod bash;
-pub mod edit_tool;
-pub mod glob_tool;
-pub mod grep_tool;
-pub mod read_tool;
 mod registry;
-pub mod todo;
 mod tool;
-pub mod write_tool;
 
-pub use bash::BashTool;
-pub use edit_tool::EditTool;
-pub use glob_tool::GlobTool;
-pub use grep_tool::GrepTool;
-pub use read_tool::ReadTool;
+/// Common/built-in tools
+pub mod common;
+
+// Core exports
 pub use registry::ToolRegistry;
-pub use todo::{new_todo_list, TodoItem, TodoList, TodoStatus, TodoWriteTool};
 pub use tool::{Tool, ToolResult};
-pub use write_tool::WriteTool;
+
+// Re-export common tools for convenience
+pub use common::{
+    new_todo_list, BashTool, EditTool, GlobTool, GrepTool, ReadTool, TodoItem, TodoList,
+    TodoStatus, TodoWriteTool, WriteTool,
+};

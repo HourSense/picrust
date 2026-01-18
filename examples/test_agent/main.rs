@@ -8,11 +8,14 @@
 //!
 //! Read operations are pre-allowed, others will prompt the user.
 //!
-//! Run with: cargo run --example test_agent
+//! Run with:
+//!   cargo run --example test_agent              # New session
+//!   cargo run --example test_agent -- --resume  # Resume existing session
 
 mod tools;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use std::env;
 use std::sync::Arc;
 
 use singapore_project::{
@@ -38,12 +41,18 @@ When the user asks you to do something, use the appropriate tools.
 Use TodoWrite to track multi-step tasks and show progress.
 Be concise in your responses."#;
 
+const SESSION_ID: &str = "test-agent-session";
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
         .with_env_filter("test_agent=info,singapore_project=warn")
         .init();
+
+    // Parse command line arguments
+    let args: Vec<String> = env::args().collect();
+    let resume = args.iter().any(|a| a == "--resume" || a == "-r");
 
     println!("=== Test Agent (StandardAgent) ===");
     println!("This agent uses the standardized agent framework.");
@@ -69,16 +78,34 @@ async fn main() -> Result<()> {
     let todo_manager = Arc::new(TodoListManager::new());
     println!("[Setup] TodoListManager created");
 
-    // --- Step 5: Create session with persistent storage ---
+    // --- Step 5: Create or load session ---
     let storage = SessionStorage::with_dir("./sessions");
-    let session = AgentSession::new_with_storage(
-        "test-agent-session",
-        "test-agent",
-        "Test Agent",
-        "A test agent demonstrating the StandardAgent framework",
-        storage,
-    )?;
-    println!("[Setup] Session: {}", session.session_id());
+    let session = if resume {
+        // Resume existing session
+        if !AgentSession::exists_with_storage(SESSION_ID, &storage) {
+            bail!(
+                "Cannot resume: session '{}' does not exist. Run without --resume to create a new session.",
+                SESSION_ID
+            );
+        }
+        let session = AgentSession::load_with_storage(SESSION_ID, storage)?;
+        println!("[Setup] Resumed session: {} ({} messages in history)",
+            session.session_id(),
+            session.history().len()
+        );
+        session
+    } else {
+        // Create new session
+        let session = AgentSession::new_with_storage(
+            SESSION_ID,
+            "test-agent",
+            "Test Agent",
+            "A test agent demonstrating the StandardAgent framework",
+            storage,
+        )?;
+        println!("[Setup] New session: {}", session.session_id());
+        session
+    };
 
     // --- Step 6: Configure the agent ---
     // Clone todo_manager for the injection closure

@@ -14,7 +14,7 @@ pub mod common;
 
 // Core exports
 pub use registry::ToolRegistry;
-pub use tool::{Tool, ToolResult};
+pub use tool::{Tool, ToolInfo, ToolResult};
 
 // Re-export common tools for convenience
 pub use common::{

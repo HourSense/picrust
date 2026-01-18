@@ -15,9 +15,11 @@ This document tracks what has been implemented in the agent framework.
 | Phase 7: Permission System | Complete | 7 tests |
 | Phase 8: Tool System | Complete | - |
 | Phase 9: Test Agent Example | Complete | - |
-| Phase 10: Helpers Module | Complete | 4 tests |
+| Phase 10: Helpers Module | Complete | 6 tests |
+| Phase 11: Standardized Agent | Complete | 2 tests |
+| Phase 12: Debugger | Complete | - |
 
-**Total Tests:** 83 passing
+**Total Tests:** 87 passing
 
 ---
 
@@ -824,6 +826,8 @@ This will:
 |------|-------------|
 | `mod.rs` | Module exports |
 | `todo_manager.rs` | TodoListManager for task tracking |
+| `context_injection.rs` | Context injection system for modifying messages before LLM calls |
+| `debugger.rs` | Debugger for logging API calls and tool executions |
 
 ### Key Types
 
@@ -862,7 +866,7 @@ impl TodoItem {
 }
 ```
 
-### Usage Pattern
+### Usage Pattern (TodoListManager)
 
 ```rust
 // 1. In agent setup, add TodoListManager to context resources:
@@ -878,6 +882,128 @@ registry.register(TodoWriteTool::new());
 let manager = Arc::new(TodoListManager::new());
 let console = Console::with_todo_manager(manager.clone());
 // Pass the same Arc to context.insert_resource()
+```
+
+### Context Injection System
+
+Allows programmers to modify messages before each LLM call without writing the entire agent loop.
+
+#### `ContextInjection` Trait
+```rust
+pub trait ContextInjection: Send + Sync {
+    fn name(&self) -> &str;
+    fn inject(&self, internals: &AgentInternals, messages: Vec<Message>) -> Vec<Message>;
+}
+```
+
+#### `FnInjection`
+Create injections from closures:
+```rust
+let injection = FnInjection::new("todo_reminder", |internals, mut messages| {
+    // Check if todo needs updating, inject reminder
+    messages
+});
+```
+
+#### `InjectionChain`
+Apply multiple injections in order:
+```rust
+let mut chain = InjectionChain::new();
+chain.add_fn("first_msg_context", |_, msgs| { /* ... */ msgs });
+chain.add_fn("todo_reminder", |_, msgs| { /* ... */ msgs });
+
+// Before each LLM call:
+let modified_messages = chain.apply(&internals, messages);
+```
+
+#### Helper Functions
+```rust
+// Inject <system-reminder> tags
+inject_system_reminder(&mut messages, "Update your todo list");
+
+// Add context to first user message
+prepend_to_first_user_message(&mut messages, "Project context: ...\n\n");
+
+// Append to last message
+append_to_last_message(&mut messages, "\n\nBe concise.");
+```
+
+---
+
+## Standardized Agent Module
+
+**Location:** `src/agent/`
+
+### Files
+
+| File | Description |
+|------|-------------|
+| `mod.rs` | Module exports |
+| `config.rs` | AgentConfig - configuration for the agent |
+| `executor.rs` | ToolExecutor - permission-aware tool execution |
+| `standard_loop.rs` | StandardAgent - the main agent implementation |
+
+### Key Types
+
+#### `AgentConfig`
+```rust
+let config = AgentConfig::new("You are a helpful assistant")
+    .with_tools(tools)                     // Set tool registry
+    .with_injection_chain(injections)      // Add context injections
+    .with_injection_fn("name", |i, m| m)   // Add function injection
+    .with_max_tool_iterations(100)         // Limit tool loops
+    .with_auto_save(true);                 // Auto-save session
+```
+
+#### `StandardAgent`
+```rust
+let agent = StandardAgent::new(config, llm);
+
+// Use with runtime.spawn()
+let handle = runtime.spawn(session, |internals| {
+    agent.run(internals)
+}).await;
+```
+
+#### `ToolExecutor`
+```rust
+// Execute tool with permission checking
+let result = ToolExecutor::execute_with_permission(
+    &mut internals,
+    &tools,
+    "Read",
+    &input
+).await;
+
+// Execute tool directly (permission already granted)
+let result = ToolExecutor::execute(&mut internals, &tools, "Read", &input).await;
+```
+
+### Flow
+
+```
+User Input
+    │
+    ▼
+┌───────────────────────────────────────────┐
+│ StandardAgent.process_turn()               │
+│                                           │
+│  1. Add user message to history           │
+│  2. Loop:                                 │
+│     a. Get messages from history          │
+│     b. Apply context injections ◄─────────┼── InjectionChain.apply()
+│     c. Call LLM                           │
+│     d. For each tool_use:                 │
+│        - ToolExecutor.execute_with_permission()
+│        - Collect results                  │
+│     e. Add assistant message to history   │
+│     f. If tool results, add & continue    │
+│     g. Else check stop_reason & break     │
+│  3. Auto-save session (if configured)     │
+└───────────────────────────────────────────┘
+    │
+    ▼
+Output (via internals.send_*)
 ```
 
 ---
@@ -902,4 +1028,119 @@ cargo test
 ```bash
 # Test agent with permission prompts
 cargo run --example test_agent
+```
+
+---
+
+## Phase 12: Debugger
+
+**Location:** `src/helpers/debugger.rs`
+
+### Purpose
+
+Debug logging for agent development. When enabled, logs all LLM API calls and tool executions to a `debugger/` folder within the session directory.
+
+### Key Types
+
+#### `Debugger`
+```rust
+impl Debugger {
+    /// Create a new debugger at session_dir/debugger/
+    pub fn new(session_dir: impl AsRef<Path>) -> Result<Self>;
+
+    /// Create a disabled debugger (no-op)
+    pub fn disabled() -> Self;
+
+    /// Check if debugging is enabled
+    pub fn is_enabled(&self) -> bool;
+
+    /// Log API request (messages, system prompt, tools)
+    pub fn log_api_request(
+        &self,
+        messages: &[Message],
+        system_prompt: Option<&str>,
+        tool_definitions: Option<&[Value]>,
+    ) -> Result<()>;
+
+    /// Log API response (raw JSON)
+    pub fn log_api_response(&self, response: &Value) -> Result<()>;
+
+    /// Log tool call (before execution)
+    pub fn log_tool_call(&self, tool_name: &str, tool_id: &str, input: &Value) -> Result<()>;
+
+    /// Log tool result (after execution)
+    pub fn log_tool_result(&self, tool_name: &str, tool_id: &str, result: &ToolResult) -> Result<()>;
+
+    /// Clear all debug logs
+    pub fn clear(&self) -> Result<()>;
+}
+```
+
+#### Event Types
+```rust
+pub enum EventType {
+    ApiRequest,
+    ApiResponse,
+    ToolCall,
+    ToolResult,
+}
+```
+
+### Output Format
+
+Debug events are stored as numbered JSON files:
+```
+sessions/<session_id>/debugger/
+├── 000000_api_request.json
+├── 000001_api_response.json
+├── 000002_tool_call_Read.json
+├── 000003_tool_result_Read.json
+├── 000004_api_request.json
+└── ...
+```
+
+Each file contains:
+- `event_type`: Type of event
+- `sequence`: Sequence number for ordering
+- Event-specific data (messages, response, tool input/output, etc.)
+
+### Integration with AgentConfig
+
+Enable debugging via the config builder:
+```rust
+let config = AgentConfig::new("System prompt")
+    .with_tools(tools)
+    .with_debug(true);  // Enable debug logging
+```
+
+### Integration with StandardAgent
+
+When debug is enabled, StandardAgent:
+1. Creates a Debugger instance at startup
+2. Stores it in `internals.context` as a resource
+3. Logs API requests/responses during LLM calls
+4. ToolExecutor logs tool calls/results
+
+### Example Debug Log (api_request.json)
+```json
+{
+  "event_type": "api_request",
+  "sequence": 0,
+  "system_prompt": "You are a helpful assistant...",
+  "messages": [
+    {"role": "user", "content": [{"type": "text", "text": "Hello"}]}
+  ],
+  "tool_definitions": [...]
+}
+```
+
+### Example Debug Log (tool_call.json)
+```json
+{
+  "event_type": "tool_call",
+  "sequence": 2,
+  "tool_name": "Read",
+  "tool_id": "toolu_01ABC123",
+  "input": {"file_path": "/path/to/file.txt"}
+}
 ```

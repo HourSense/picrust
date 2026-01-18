@@ -11,3 +11,6 @@ pub mod logging;
 
 // Useful helpers for agent implementations
 pub mod helpers;
+
+// Standardized agent implementation
+pub mod agent;

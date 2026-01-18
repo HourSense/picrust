@@ -277,6 +277,19 @@ impl AgentContext {
         self.resources.insert(value);
     }
 
+    /// Insert an already Arc-wrapped resource by type
+    ///
+    /// Use this when the resource is already wrapped in Arc (e.g., shared with other components).
+    ///
+    /// # Example
+    /// ```ignore
+    /// let manager = Arc::new(TodoManager::new());
+    /// ctx.insert_resource_arc(manager.clone());
+    /// ```
+    pub fn insert_resource_arc<T: Send + Sync + 'static>(&mut self, value: Arc<T>) {
+        self.resources.insert_arc(value);
+    }
+
     /// Get a resource by type
     ///
     /// # Example

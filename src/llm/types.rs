@@ -135,6 +135,43 @@ impl Message {
             MessageContent::Blocks(blocks) => Some(blocks),
         }
     }
+
+    /// Append text to this message
+    ///
+    /// - For Text messages: appends to the string
+    /// - For Block messages: appends a new text block
+    pub fn append_text(&mut self, text: &str) {
+        match &mut self.content {
+            MessageContent::Text(s) => {
+                s.push_str(text);
+            }
+            MessageContent::Blocks(blocks) => {
+                blocks.push(ContentBlock::Text {
+                    text: text.to_string(),
+                });
+            }
+        }
+    }
+
+    /// Prepend text to this message
+    ///
+    /// - For Text messages: prepends to the string
+    /// - For Block messages: inserts a new text block at the beginning
+    pub fn prepend_text(&mut self, text: &str) {
+        match &mut self.content {
+            MessageContent::Text(s) => {
+                *s = format!("{}{}", text, s);
+            }
+            MessageContent::Blocks(blocks) => {
+                blocks.insert(
+                    0,
+                    ContentBlock::Text {
+                        text: text.to_string(),
+                    },
+                );
+            }
+        }
+    }
 }
 
 // ============================================================================

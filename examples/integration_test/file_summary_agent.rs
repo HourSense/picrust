@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use singapore_project::{
+use shadow_agent_sdk::{
     agent::{AgentConfig, StandardAgent},
     llm::AnthropicProvider,
     permissions::PermissionRule,
@@ -34,7 +34,7 @@ Do NOT ask questions. Just read and summarize."#;
 
 /// Creates the tool registry for FileSummaryAgent (Read only)
 pub fn create_tools() -> Result<ToolRegistry> {
-    use singapore_project::tools::common::ReadTool;
+    use shadow_agent_sdk::tools::common::ReadTool;
 
     let mut registry = ToolRegistry::new();
     registry.register(ReadTool::new()?);

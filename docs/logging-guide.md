@@ -45,10 +45,10 @@ RUST_LOG=trace cargo run
 ### Specific Module Logging
 ```bash
 # Only debug the LLM provider
-RUST_LOG=singapore_project::llm=debug cargo run
+RUST_LOG=shadow_agent_sdk::llm=debug cargo run
 
 # Debug LLM and agent, info for everything else
-RUST_LOG=singapore_project::llm=debug,singapore_project::agent=debug cargo run
+RUST_LOG=shadow_agent_sdk::llm=debug,shadow_agent_sdk::agent=debug cargo run
 ```
 
 ## Viewing Logs
@@ -113,10 +113,10 @@ Logs include:
 
 Example:
 ```
-2026-01-14T10:30:45.123456Z  INFO singapore_project::agent: Starting agent loop
-2026-01-14T10:30:50.234567Z DEBUG singapore_project::llm: User message: hi
-2026-01-14T10:30:50.345678Z DEBUG singapore_project::llm: Calling Anthropic API...
-2026-01-14T10:30:51.456789Z ERROR singapore_project::llm: Anthropic API error: ...
+2026-01-14T10:30:45.123456Z  INFO shadow_agent_sdk::agent: Starting agent loop
+2026-01-14T10:30:50.234567Z DEBUG shadow_agent_sdk::llm: User message: hi
+2026-01-14T10:30:50.345678Z DEBUG shadow_agent_sdk::llm: Calling Anthropic API...
+2026-01-14T10:30:51.456789Z ERROR shadow_agent_sdk::llm: Anthropic API error: ...
 ```
 
 ## Debugging Your Error

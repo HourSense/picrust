@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use singapore_project::{
+use shadow_agent_sdk::{
     agent::{AgentConfig, StandardAgent},
     cli::ConsoleRenderer,
     llm::AnthropicProvider,
@@ -38,7 +38,7 @@ Be helpful and concise."#;
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_env_filter("integration_test=info,singapore_project=info")
+        .with_env_filter("integration_test=info,shadow_agent_sdk=info")
         .init();
 
     println!("=== Integration Test: Main Agent + Subagent ===");

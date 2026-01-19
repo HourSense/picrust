@@ -13,7 +13,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use singapore_project::permissions::{GlobalPermissions, PermissionManager, PermissionRule};
+//! use shadow_agent_sdk::permissions::{GlobalPermissions, PermissionManager, PermissionRule};
 //! use std::sync::Arc;
 //!
 //! // Create shared global permissions

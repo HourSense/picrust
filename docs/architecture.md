@@ -5,7 +5,7 @@ A Rust-based coding assistant with tool calling, permission management, and conv
 ## Project Structure
 
 ```
-singapore-project/
+shadow-agent-sdk/
 ├── Cargo.toml                    # Dependencies and project config
 ├── Cargo.lock                    # Locked dependency versions
 ├── .gitignore                    # Git ignore rules

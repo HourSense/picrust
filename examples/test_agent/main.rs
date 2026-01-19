@@ -18,7 +18,7 @@ use anyhow::{bail, Result};
 use std::env;
 use std::sync::Arc;
 
-use singapore_project::{
+use shadow_agent_sdk::{
     agent::{AgentConfig, StandardAgent},
     cli::ConsoleRenderer,
     helpers::{inject_system_reminder, TodoListManager},
@@ -47,7 +47,7 @@ const SESSION_ID: &str = "test-agent-session";
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_env_filter("test_agent=info,singapore_project=warn")
+        .with_env_filter("test_agent=info,shadow_agent_sdk=warn")
         .init();
 
     // Parse command line arguments

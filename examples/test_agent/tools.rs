@@ -3,7 +3,7 @@
 //! Registers Read, Write, Bash, and TodoWrite tools.
 
 use anyhow::Result;
-use singapore_project::tools::{BashTool, ReadTool, TodoWriteTool, ToolRegistry, WriteTool};
+use shadow_agent_sdk::tools::{BashTool, ReadTool, TodoWriteTool, ToolRegistry, WriteTool};
 
 /// Create a tool registry with Read, Write, Bash, and TodoWrite tools
 pub fn create_registry() -> Result<ToolRegistry> {

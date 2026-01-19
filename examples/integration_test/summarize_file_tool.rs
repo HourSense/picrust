@@ -8,7 +8,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use serde_json::json;
 
-use singapore_project::{
+use shadow_agent_sdk::{
     core::OutputChunk,
     llm::{AnthropicProvider, ToolDefinition},
     llm::types::CustomTool,
@@ -46,7 +46,7 @@ impl Tool for SummarizeFileTool {
         ToolDefinition::Custom(CustomTool {
             name: self.name().to_string(),
             description: Some(self.description().to_string()),
-            input_schema: singapore_project::llm::types::ToolInputSchema {
+            input_schema: shadow_agent_sdk::llm::types::ToolInputSchema {
                 schema_type: "object".to_string(),
                 properties: Some(json!({
                     "file_path": {

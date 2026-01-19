@@ -66,7 +66,7 @@ Stores messages in JSON Lines format (one JSON object per line):
 ### Creating a Conversation
 
 ```rust
-use singapore_project::conversation::Conversation;
+use shadow_agent_sdk::conversation::Conversation;
 
 // Create new conversation (generates UUID automatically)
 let mut conversation = Conversation::new()?;
@@ -84,7 +84,7 @@ conversation.add_user_message("Hello!")?;
 conversation.add_assistant_message("Hi there!")?;
 
 // Add custom message
-use singapore_project::conversation::Message;
+use shadow_agent_sdk::conversation::Message;
 conversation.add_message(Message::user("Custom message"))?;
 ```
 

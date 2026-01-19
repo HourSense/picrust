@@ -176,6 +176,57 @@ impl SessionStorage {
         Ok(sessions)
     }
 
+    /// List session IDs with optional filtering
+    ///
+    /// If `top_level_only` is true, only returns sessions that are not subagents
+    /// (i.e., sessions with no parent_session_id).
+    pub fn list_sessions_filtered(&self, top_level_only: bool) -> FrameworkResult<Vec<String>> {
+        let all_sessions = self.list_sessions()?;
+
+        if !top_level_only {
+            return Ok(all_sessions);
+        }
+
+        // Filter to only top-level sessions
+        let mut filtered = Vec::new();
+        for session_id in all_sessions {
+            if let Ok(metadata) = self.load_metadata(&session_id) {
+                if !metadata.is_subagent() {
+                    filtered.push(session_id);
+                }
+            }
+        }
+
+        Ok(filtered)
+    }
+
+    /// List only top-level session IDs (sessions that are not subagents)
+    pub fn list_top_level_sessions(&self) -> FrameworkResult<Vec<String>> {
+        self.list_sessions_filtered(true)
+    }
+
+    /// List all sessions with their metadata
+    ///
+    /// Returns tuples of (session_id, metadata) for all valid sessions.
+    /// If `top_level_only` is true, only includes sessions that are not subagents.
+    pub fn list_sessions_with_metadata(
+        &self,
+        top_level_only: bool,
+    ) -> FrameworkResult<Vec<(String, SessionMetadata)>> {
+        let session_ids = self.list_sessions()?;
+        let mut result = Vec::new();
+
+        for session_id in session_ids {
+            if let Ok(metadata) = self.load_metadata(&session_id) {
+                if !top_level_only || !metadata.is_subagent() {
+                    result.push((session_id, metadata));
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
     /// Delete a session
     pub fn delete_session(&self, session_id: &str) -> FrameworkResult<()> {
         let dir = self.session_dir(session_id);
@@ -275,5 +326,81 @@ mod tests {
 
         storage.delete_session("to_delete").unwrap();
         assert!(!storage.session_exists("to_delete"));
+    }
+
+    #[test]
+    fn test_list_sessions_filtered() {
+        let (storage, _temp) = create_test_storage();
+
+        // Create a top-level session
+        storage
+            .save_metadata(&SessionMetadata::new("parent1", "main", "Parent", "A parent"))
+            .unwrap();
+
+        // Create another top-level session
+        storage
+            .save_metadata(&SessionMetadata::new("parent2", "main", "Parent 2", "Another parent"))
+            .unwrap();
+
+        // Create a subagent session
+        storage
+            .save_metadata(&SessionMetadata::new_subagent(
+                "child1",
+                "researcher",
+                "Child",
+                "A child",
+                "parent1",
+                "tool_123",
+            ))
+            .unwrap();
+
+        // List all sessions
+        let all = storage.list_sessions().unwrap();
+        assert_eq!(all.len(), 3);
+
+        // List with filter = false (all sessions)
+        let all_filtered = storage.list_sessions_filtered(false).unwrap();
+        assert_eq!(all_filtered.len(), 3);
+
+        // List only top-level sessions
+        let top_level = storage.list_sessions_filtered(true).unwrap();
+        assert_eq!(top_level.len(), 2);
+        assert!(top_level.contains(&"parent1".to_string()));
+        assert!(top_level.contains(&"parent2".to_string()));
+        assert!(!top_level.contains(&"child1".to_string()));
+
+        // Also test the convenience method
+        let top_level2 = storage.list_top_level_sessions().unwrap();
+        assert_eq!(top_level2.len(), 2);
+    }
+
+    #[test]
+    fn test_list_sessions_with_metadata() {
+        let (storage, _temp) = create_test_storage();
+
+        // Create sessions
+        storage
+            .save_metadata(&SessionMetadata::new("main1", "coder", "Main 1", "First main"))
+            .unwrap();
+        storage
+            .save_metadata(&SessionMetadata::new_subagent(
+                "sub1",
+                "helper",
+                "Sub 1",
+                "First sub",
+                "main1",
+                "tool_1",
+            ))
+            .unwrap();
+
+        // List all with metadata
+        let all = storage.list_sessions_with_metadata(false).unwrap();
+        assert_eq!(all.len(), 2);
+
+        // List top-level only with metadata
+        let top_level = storage.list_sessions_with_metadata(true).unwrap();
+        assert_eq!(top_level.len(), 1);
+        assert_eq!(top_level[0].0, "main1");
+        assert_eq!(top_level[0].1.agent_type, "coder");
     }
 }

@@ -298,6 +298,81 @@ impl AgentSession {
         storage.list_sessions()
     }
 
+    /// List sessions with optional filtering
+    ///
+    /// If `top_level_only` is true, only returns sessions that are not subagents.
+    pub fn list_filtered(top_level_only: bool) -> FrameworkResult<Vec<String>> {
+        SessionStorage::new().list_sessions_filtered(top_level_only)
+    }
+
+    /// List sessions with optional filtering and custom storage
+    pub fn list_filtered_with_storage(
+        top_level_only: bool,
+        storage: &SessionStorage,
+    ) -> FrameworkResult<Vec<String>> {
+        storage.list_sessions_filtered(top_level_only)
+    }
+
+    /// List only top-level sessions (not subagents)
+    pub fn list_top_level() -> FrameworkResult<Vec<String>> {
+        SessionStorage::new().list_top_level_sessions()
+    }
+
+    /// List only top-level sessions with custom storage
+    pub fn list_top_level_with_storage(storage: &SessionStorage) -> FrameworkResult<Vec<String>> {
+        storage.list_top_level_sessions()
+    }
+
+    /// List sessions with their metadata
+    ///
+    /// Returns tuples of (session_id, metadata) for all valid sessions.
+    /// If `top_level_only` is true, only includes sessions that are not subagents.
+    pub fn list_with_metadata(
+        top_level_only: bool,
+    ) -> FrameworkResult<Vec<(String, SessionMetadata)>> {
+        SessionStorage::new().list_sessions_with_metadata(top_level_only)
+    }
+
+    /// List sessions with metadata using custom storage
+    pub fn list_with_metadata_and_storage(
+        top_level_only: bool,
+        storage: &SessionStorage,
+    ) -> FrameworkResult<Vec<(String, SessionMetadata)>> {
+        storage.list_sessions_with_metadata(top_level_only)
+    }
+
+    /// Get conversation history for a session by ID
+    ///
+    /// This is a convenience method that loads only the messages without
+    /// loading the full session object.
+    pub fn get_history(session_id: &str) -> FrameworkResult<Vec<Message>> {
+        SessionStorage::new().load_messages(session_id)
+    }
+
+    /// Get conversation history with custom storage
+    pub fn get_history_with_storage(
+        session_id: &str,
+        storage: &SessionStorage,
+    ) -> FrameworkResult<Vec<Message>> {
+        storage.load_messages(session_id)
+    }
+
+    /// Get session metadata by ID
+    ///
+    /// This is a convenience method that loads only the metadata without
+    /// loading the full session object.
+    pub fn get_metadata(session_id: &str) -> FrameworkResult<SessionMetadata> {
+        SessionStorage::new().load_metadata(session_id)
+    }
+
+    /// Get session metadata with custom storage
+    pub fn get_metadata_with_storage(
+        session_id: &str,
+        storage: &SessionStorage,
+    ) -> FrameworkResult<SessionMetadata> {
+        storage.load_metadata(session_id)
+    }
+
     /// Check if a session exists
     pub fn exists(session_id: &str) -> bool {
         SessionStorage::new().session_exists(session_id)
@@ -469,5 +544,124 @@ mod tests {
 
         assert_eq!(session.model(), "claude-opus-4-5-20251101");
         assert_eq!(session.provider(), "anthropic");
+    }
+
+    #[test]
+    fn test_list_filtered() {
+        let (storage, _temp) = create_test_storage();
+
+        // Create top-level sessions
+        let _parent1 =
+            AgentSession::new_with_storage("parent1", "main", "Parent 1", "First parent", storage.clone())
+                .unwrap();
+        let _parent2 =
+            AgentSession::new_with_storage("parent2", "main", "Parent 2", "Second parent", storage.clone())
+                .unwrap();
+
+        // Create a subagent
+        let _child = AgentSession::new_subagent_with_storage(
+            "child1",
+            "helper",
+            "Child 1",
+            "A child agent",
+            "parent1",
+            "tool_123",
+            storage.clone(),
+        )
+        .unwrap();
+
+        // List all
+        let all = AgentSession::list_filtered_with_storage(false, &storage).unwrap();
+        assert_eq!(all.len(), 3);
+
+        // List top-level only
+        let top_level = AgentSession::list_filtered_with_storage(true, &storage).unwrap();
+        assert_eq!(top_level.len(), 2);
+        assert!(top_level.contains(&"parent1".to_string()));
+        assert!(top_level.contains(&"parent2".to_string()));
+        assert!(!top_level.contains(&"child1".to_string()));
+
+        // Test convenience method
+        let top_level2 = AgentSession::list_top_level_with_storage(&storage).unwrap();
+        assert_eq!(top_level2.len(), 2);
+    }
+
+    #[test]
+    fn test_list_with_metadata() {
+        let (storage, _temp) = create_test_storage();
+
+        let _main = AgentSession::new_with_storage(
+            "main_agent",
+            "coder",
+            "Main Agent",
+            "Main agent description",
+            storage.clone(),
+        )
+        .unwrap();
+
+        let _sub = AgentSession::new_subagent_with_storage(
+            "sub_agent",
+            "researcher",
+            "Sub Agent",
+            "Sub agent description",
+            "main_agent",
+            "tool_456",
+            storage.clone(),
+        )
+        .unwrap();
+
+        // All sessions with metadata
+        let all = AgentSession::list_with_metadata_and_storage(false, &storage).unwrap();
+        assert_eq!(all.len(), 2);
+
+        // Top-level only with metadata
+        let top_level = AgentSession::list_with_metadata_and_storage(true, &storage).unwrap();
+        assert_eq!(top_level.len(), 1);
+        assert_eq!(top_level[0].0, "main_agent");
+        assert_eq!(top_level[0].1.name, "Main Agent");
+    }
+
+    #[test]
+    fn test_get_history() {
+        let (storage, _temp) = create_test_storage();
+
+        let mut session = AgentSession::new_with_storage(
+            "history_test",
+            "coder",
+            "Test",
+            "Testing",
+            storage.clone(),
+        )
+        .unwrap();
+
+        // Add some messages
+        session.add_message(Message::user("Hello")).unwrap();
+        session.add_message(Message::assistant("Hi there!")).unwrap();
+        session.add_message(Message::user("How are you?")).unwrap();
+
+        // Get history using static method
+        let history = AgentSession::get_history_with_storage("history_test", &storage).unwrap();
+        assert_eq!(history.len(), 3);
+    }
+
+    #[test]
+    fn test_get_metadata() {
+        let (storage, _temp) = create_test_storage();
+
+        let _session = AgentSession::new_with_storage(
+            "meta_test",
+            "researcher",
+            "Research Agent",
+            "Finds information",
+            storage.clone(),
+        )
+        .unwrap();
+
+        // Get metadata using static method
+        let metadata = AgentSession::get_metadata_with_storage("meta_test", &storage).unwrap();
+        assert_eq!(metadata.session_id, "meta_test");
+        assert_eq!(metadata.agent_type, "researcher");
+        assert_eq!(metadata.name, "Research Agent");
+        assert!(!metadata.is_subagent());
     }
 }

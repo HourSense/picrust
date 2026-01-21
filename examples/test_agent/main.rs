@@ -147,13 +147,13 @@ async fn main() -> Result<()> {
     let storage = SessionStorage::with_dir("./sessions");
     let session = if resume {
         // Resume existing session
-        if !AgentSession::exists_with_storage(SESSION_ID, &storage) {
+        if !AgentSession::exists_with_storage(&session_id, &storage) {
             bail!(
                 "Cannot resume: session '{}' does not exist. Run without --resume to create a new session.",
-                SESSION_ID
+                session_id
             );
         }
-        let session = AgentSession::load_with_storage(SESSION_ID, storage)?;
+        let session = AgentSession::load_with_storage(&session_id, storage)?;
         println!("[Setup] Resumed session: {} ({} messages in history)",
             session.session_id(),
             session.history().len()
@@ -162,7 +162,7 @@ async fn main() -> Result<()> {
     } else {
         // Create new session
         let session = AgentSession::new_with_storage(
-            SESSION_ID,
+            &session_id,
             "test-agent",
             "Test Agent",
             "A test agent demonstrating the StandardAgent framework",

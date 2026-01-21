@@ -357,12 +357,16 @@ pub enum ContentBlock {
     #[serde(rename = "image")]
     Image {
         source: ImageSource,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
 
     /// Document block (for PDFs)
     #[serde(rename = "document")]
     Document {
         source: DocumentSource,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cache_control: Option<CacheControl>,
     },
 }
 
@@ -421,6 +425,7 @@ impl ContentBlock {
     pub fn image(data: String, media_type: String) -> Self {
         ContentBlock::Image {
             source: ImageSource::base64(data, media_type),
+            cache_control: None,
         }
     }
 
@@ -428,6 +433,7 @@ impl ContentBlock {
     pub fn document(data: String, media_type: String) -> Self {
         ContentBlock::Document {
             source: DocumentSource::base64(data, media_type),
+            cache_control: None,
         }
     }
 
@@ -440,8 +446,14 @@ impl ContentBlock {
             ContentBlock::ToolResult { cache_control: cc, .. } => {
                 *cc = Some(cache_control);
             }
+            ContentBlock::Image { cache_control: cc, .. } => {
+                *cc = Some(cache_control);
+            }
+            ContentBlock::Document { cache_control: cc, .. } => {
+                *cc = Some(cache_control);
+            }
             _ => {
-                // Other block types don't support cache control
+                // Other block types (ToolUse, Thinking, RedactedThinking) don't support cache control
             }
         }
         self

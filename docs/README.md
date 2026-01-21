@@ -6,7 +6,11 @@ A Rust framework for building AI agents with Claude. Designed for applications t
 
 1. [Quick Start](#quick-start)
 2. [Core Concepts](#core-concepts)
-3. [Module Reference](#module-reference)
+3. [Key Features](#key-features)
+   - [Prompt Caching](#prompt-caching)
+   - [Streaming and History](#streaming-and-history)
+   - [Image and PDF Support](#image-and-pdf-support)
+4. [Module Reference](#module-reference)
    - [Runtime](#runtime-module)
    - [Session](#session-module)
    - [Tools](#tools-module)
@@ -14,9 +18,9 @@ A Rust framework for building AI agents with Claude. Designed for applications t
    - [Hooks](#hooks-module)
    - [LLM Provider](#llm-module)
    - [Helpers](#helpers-module)
-4. [Building a Frontend Integration](#building-a-frontend-integration)
-5. [Examples](#examples)
-6. [API Reference](#api-reference)
+5. [Building a Frontend Integration](#building-a-frontend-integration)
+6. [Examples](#examples)
+7. [API Reference](#api-reference)
 
 ---
 
@@ -191,6 +195,227 @@ Frontend                    AgentHandle                 Agent
    │                            │◄── Done ───────────────│
    │◄── OutputChunk ───────────│                         │
 ```
+
+---
+
+## Key Features
+
+### Prompt Caching
+
+The SDK automatically implements prompt caching to reduce API costs by up to 90% and improve latency. This feature is **enabled by default**.
+
+#### How It Works
+
+Prompt caching is a feature from Anthropic that allows reusing previously processed prompt content:
+- Cached tokens cost only **10% of regular input tokens** (90% discount)
+- Cache writes cost 25% more than regular input tokens
+- Cache entries have a 5-minute lifetime by default (refreshed on each use)
+
+The framework automatically adds cache breakpoints at three strategic locations:
+
+1. **Tool Definitions** - Caches all tool definitions (they rarely change)
+2. **System Prompt** - Caches the system prompt (static for entire conversation)
+3. **Conversation History** - Caches the growing conversation history
+
+#### Cost Example
+
+For a 3-turn conversation:
+- **Without caching**: 21,000 tokens
+- **With caching**: 11,450 tokens
+- **Savings**: ~46% (increases with longer conversations!)
+
+#### Usage
+
+```rust
+// Enabled by default
+let config = AgentConfig::new("You are a helpful assistant")
+    .with_tools(tools);
+
+// Optionally disable
+let config = AgentConfig::new("You are a helpful assistant")
+    .with_prompt_caching(false);
+
+// Enable debug mode to see cache metrics
+let config = AgentConfig::new("You are a helpful assistant")
+    .with_debug(true);  // Logs cache creation/read tokens
+```
+
+#### Monitoring Cache Performance
+
+When debug mode is enabled, cache metrics are logged:
+```
+Cache creation tokens: 5000
+Cache read tokens: 12000
+```
+
+You can also access these programmatically via `MessageResponse.usage`:
+- `usage.cache_creation_input_tokens` - Tokens written to cache
+- `usage.cache_read_input_tokens` - Tokens read from cache
+- `usage.input_tokens` - Uncached tokens
+
+---
+
+### Streaming and History
+
+The SDK uses a **dual-channel architecture** for conversation data:
+
+1. **Stream** - Real-time output via broadcast channels (ephemeral, fast)
+2. **History** - Persistent message storage on disk (durable, reliable)
+
+#### Critical Pattern: Subscribe Before Sending
+
+```rust
+// ✅ CORRECT: Subscribe BEFORE sending input
+let mut rx = handle.subscribe();  // Subscribe first
+handle.send_input("Hello").await?;  // Then send
+
+// ❌ WRONG: Subscribe after sending
+handle.send_input("Hello").await?;
+let mut rx = handle.subscribe();  // Too late! Missed early output
+```
+
+#### The Foolproof Pattern for Displaying Conversations
+
+```rust
+// Step 1: Load historical messages from disk
+let history = AgentSession::get_history("session-id")?;
+for message in history {
+    ui.display_message(message);
+}
+
+// Step 2: Subscribe to stream BEFORE sending input
+let mut rx = handle.subscribe();
+
+// Step 3: Spawn task to process stream
+tokio::spawn(async move {
+    while let Ok(chunk) = rx.recv().await {
+        match chunk {
+            OutputChunk::TextDelta(text) => ui.append_text(text),
+            OutputChunk::ToolStart { name, .. } => ui.show_tool(name),
+            OutputChunk::Done => {
+                ui.enable_input();
+                // Optionally refresh from disk for consistency
+                let updated = AgentSession::get_history("session-id").ok();
+                if let Some(history) = updated {
+                    ui.refresh_history(history);
+                }
+            }
+            _ => {}
+        }
+    }
+});
+
+// Step 4: Send user input
+handle.send_input(user_text).await?;
+```
+
+#### Why This Matters
+
+- **Stream** provides real-time responsiveness for UIs
+- **History** provides ground truth for persistence and reliability
+- Messages are written to disk immediately (write-through persistence)
+- Stream is ephemeral - if no one is subscribed, chunks are lost
+- History is durable - always available on disk
+
+#### Multiple Agent Turns
+
+A single user input can trigger multiple LLM calls. For example:
+```
+User: "Write hello.rs and run it"
+  → Turn 1: LLM writes file (streams text + ToolUse)
+  → Turn 2: LLM runs file (streams text + ToolUse)
+  → Turn 3: LLM shows results (streams text only, Done)
+```
+
+All turns stream continuously to subscribers until `OutputChunk::Done` is received.
+
+---
+
+### Image and PDF Support
+
+The Read tool supports images and PDFs for Claude's vision and document understanding capabilities.
+
+#### Supported Formats
+
+- **Images**: PNG, JPEG, GIF, WebP (max 5MB)
+- **PDFs**: PDF documents (max 32MB)
+- **Text**: All other files (no size limit, with offset/limit support)
+
+#### Automatic Detection
+
+File type is detected automatically based on extension:
+
+```rust
+// Read an image - automatically returns image content
+handle.send_input("Read screenshot.png").await?;
+// LLM receives the image and can analyze it visually
+
+// Read a PDF - automatically returns document content
+handle.send_input("Read contract.pdf").await?;
+// LLM receives the PDF and can extract information
+
+// Read text - returns formatted text with line numbers
+handle.send_input("Read main.rs").await?;
+```
+
+#### Tool Result Types
+
+The framework handles three types of content:
+
+```rust
+pub enum ToolResultData {
+    Text(String),                    // Regular text files
+    Image {                          // PNG, JPEG, GIF, WebP
+        data: Vec<u8>,
+        media_type: String,
+    },
+    Document {                       // PDF files
+        data: Vec<u8>,
+        media_type: String,
+        description: String,         // "PDF file read: /path/file.pdf (240.6KB)"
+    },
+}
+```
+
+#### API Format
+
+Images and PDFs are automatically base64-encoded and sent to Claude:
+
+**For Images:**
+```json
+{
+  "type": "image",
+  "source": {
+    "type": "base64",
+    "media_type": "image/png",
+    "data": "iVBORw0KGg..."
+  }
+}
+```
+
+**For PDFs:**
+```json
+[
+  {
+    "type": "tool_result",
+    "content": "PDF file read: /path/file.pdf (240.6KB)"
+  },
+  {
+    "type": "document",
+    "source": {
+      "type": "base64",
+      "media_type": "application/pdf",
+      "data": "JVBERi0xLj..."
+    }
+  }
+]
+```
+
+#### Size Limits and Caching
+
+- Images and PDFs support prompt caching just like text content
+- The last content block (text, image, or PDF) gets cache control applied
+- This reduces costs when analyzing the same images/documents multiple times
 
 ---
 
@@ -410,7 +635,7 @@ use shadow_agent_sdk::tools::{ToolRegistry, common::*};
 let mut tools = ToolRegistry::new();
 
 // File operations
-tools.register(ReadTool::new()?);       // Read file contents
+tools.register(ReadTool::new()?);       // Read text files, images (PNG/JPEG/GIF/WebP), and PDFs
 tools.register(WriteTool::new()?);      // Write/create files
 tools.register(EditTool::new()?);       // Edit existing files
 tools.register(GlobTool::new()?);       // Find files by pattern
@@ -1225,6 +1450,7 @@ cargo run --example session_browser
 | `with_auto_save(bool)` | Auto-save session |
 | `with_injection_chain(chain)` | Set context injections |
 | `with_auto_name(bool)` | Auto-name conversations (default: true) |
+| `with_prompt_caching(bool)` | Enable/disable prompt caching (default: true) |
 
 ### Session Methods
 

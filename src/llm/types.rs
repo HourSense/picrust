@@ -262,6 +262,52 @@ impl Message {
 // Content Blocks
 // ============================================================================
 
+/// Image source for image content blocks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageSource {
+    /// Source type (always "base64")
+    #[serde(rename = "type")]
+    pub source_type: String,
+    /// Media type (e.g., "image/png", "image/jpeg", "image/gif", "image/webp")
+    pub media_type: String,
+    /// Base64-encoded image data
+    pub data: String,
+}
+
+impl ImageSource {
+    /// Create a new image source from base64 data
+    pub fn base64(data: String, media_type: String) -> Self {
+        Self {
+            source_type: "base64".to_string(),
+            media_type,
+            data,
+        }
+    }
+}
+
+/// Document source for document content blocks (PDFs)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocumentSource {
+    /// Source type (always "base64")
+    #[serde(rename = "type")]
+    pub source_type: String,
+    /// Media type (e.g., "application/pdf")
+    pub media_type: String,
+    /// Base64-encoded document data
+    pub data: String,
+}
+
+impl DocumentSource {
+    /// Create a new document source from base64 data
+    pub fn base64(data: String, media_type: String) -> Self {
+        Self {
+            source_type: "base64".to_string(),
+            media_type,
+            data,
+        }
+    }
+}
+
 /// Content block in a message - supports text, tool_use, tool_result, and thinking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -305,6 +351,18 @@ pub enum ContentBlock {
     #[serde(rename = "redacted_thinking")]
     RedactedThinking {
         data: String,
+    },
+
+    /// Image block
+    #[serde(rename = "image")]
+    Image {
+        source: ImageSource,
+    },
+
+    /// Document block (for PDFs)
+    #[serde(rename = "document")]
+    Document {
+        source: DocumentSource,
     },
 }
 
@@ -356,6 +414,20 @@ impl ContentBlock {
             content: Some(content.into()),
             is_error: if is_error { Some(true) } else { None },
             cache_control: Some(cache_control),
+        }
+    }
+
+    /// Create an image content block from base64 data
+    pub fn image(data: String, media_type: String) -> Self {
+        ContentBlock::Image {
+            source: ImageSource::base64(data, media_type),
+        }
+    }
+
+    /// Create a document content block from base64 data
+    pub fn document(data: String, media_type: String) -> Self {
+        ContentBlock::Document {
+            source: DocumentSource::base64(data, media_type),
         }
     }
 

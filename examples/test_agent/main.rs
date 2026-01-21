@@ -48,8 +48,6 @@ When the user asks you to do something, use the appropriate tools.
 Use TodoWrite to track multi-step tasks and show progress.
 Be concise in your responses."#;
 
-const SESSION_ID: &str = "test-agent-session";
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Initialize logging
@@ -60,6 +58,12 @@ async fn main() -> Result<()> {
     // Parse command line arguments
     let args: Vec<String> = env::args().collect();
     let resume = args.iter().any(|a| a == "--resume" || a == "-r");
+
+    // Generate session ID with timestamp
+    let session_id = format!(
+        "test-agent-session-{}",
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
 
     println!("=== Test Agent (StandardAgent) ===");
     println!("This agent uses the standardized agent framework.");

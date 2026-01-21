@@ -10,20 +10,35 @@ use serde_json::Value;
 use crate::llm::ToolDefinition;
 use crate::runtime::AgentInternals;
 
+/// Content type for tool results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ToolResultData {
+    /// Text content
+    Text(String),
+    /// Image content (raw bytes and media type)
+    Image { data: Vec<u8>, media_type: String },
+    /// Document content (raw bytes, media type, and description)
+    Document {
+        data: Vec<u8>,
+        media_type: String,
+        description: String,
+    },
+}
+
 /// Result of executing a tool
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolResult {
-    /// The output of the tool
-    pub output: String,
+    /// The content of the tool result
+    pub content: ToolResultData,
     /// Whether the tool execution resulted in an error
     pub is_error: bool,
 }
 
 impl ToolResult {
-    /// Create a successful tool result
+    /// Create a successful tool result with text content
     pub fn success(output: impl Into<String>) -> Self {
         Self {
-            output: output.into(),
+            content: ToolResultData::Text(output.into()),
             is_error: false,
         }
     }
@@ -31,8 +46,35 @@ impl ToolResult {
     /// Create an error tool result
     pub fn error(message: impl Into<String>) -> Self {
         Self {
-            output: message.into(),
+            content: ToolResultData::Text(message.into()),
             is_error: true,
+        }
+    }
+
+    /// Create a successful image result
+    pub fn image(data: Vec<u8>, media_type: impl Into<String>) -> Self {
+        Self {
+            content: ToolResultData::Image {
+                data,
+                media_type: media_type.into(),
+            },
+            is_error: false,
+        }
+    }
+
+    /// Create a successful document result
+    pub fn document(
+        data: Vec<u8>,
+        media_type: impl Into<String>,
+        description: impl Into<String>,
+    ) -> Self {
+        Self {
+            content: ToolResultData::Document {
+                data,
+                media_type: media_type.into(),
+                description: description.into(),
+            },
+            is_error: false,
         }
     }
 }
@@ -88,14 +130,56 @@ mod tests {
     #[test]
     fn test_tool_result_success() {
         let result = ToolResult::success("output");
-        assert_eq!(result.output, "output");
+        match result.content {
+            ToolResultData::Text(text) => assert_eq!(text, "output"),
+            _ => panic!("Expected text content"),
+        }
         assert!(!result.is_error);
     }
 
     #[test]
     fn test_tool_result_error() {
         let result = ToolResult::error("error message");
-        assert_eq!(result.output, "error message");
+        match result.content {
+            ToolResultData::Text(text) => assert_eq!(text, "error message"),
+            _ => panic!("Expected text content"),
+        }
         assert!(result.is_error);
+    }
+
+    #[test]
+    fn test_tool_result_image() {
+        let data = vec![1, 2, 3, 4];
+        let result = ToolResult::image(data.clone(), "image/png");
+        match result.content {
+            ToolResultData::Image {
+                data: img_data,
+                media_type,
+            } => {
+                assert_eq!(img_data, data);
+                assert_eq!(media_type, "image/png");
+            }
+            _ => panic!("Expected image content"),
+        }
+        assert!(!result.is_error);
+    }
+
+    #[test]
+    fn test_tool_result_document() {
+        let data = vec![1, 2, 3, 4];
+        let result = ToolResult::document(data.clone(), "application/pdf", "Test PDF");
+        match result.content {
+            ToolResultData::Document {
+                data: doc_data,
+                media_type,
+                description,
+            } => {
+                assert_eq!(doc_data, data);
+                assert_eq!(media_type, "application/pdf");
+                assert_eq!(description, "Test PDF");
+            }
+            _ => panic!("Expected document content"),
+        }
+        assert!(!result.is_error);
     }
 }

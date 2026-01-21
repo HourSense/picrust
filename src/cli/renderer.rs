@@ -199,7 +199,17 @@ impl ConsoleRenderer {
                         }
                         OutputChunk::ToolEnd { result, .. } => {
                             if self.show_tools {
-                                self.console.print_tool_result(&result.output, result.is_error);
+                                use crate::tools::ToolResultData;
+                                let output_text = match &result.content {
+                                    ToolResultData::Text(text) => text.clone(),
+                                    ToolResultData::Image { data, media_type } => {
+                                        format!("Image ({}, {} bytes)", media_type, data.len())
+                                    }
+                                    ToolResultData::Document { description, data, media_type } => {
+                                        format!("{} ({}, {} bytes)", description, media_type, data.len())
+                                    }
+                                };
+                                self.console.print_tool_result(&output_text, result.is_error);
                             }
                         }
 

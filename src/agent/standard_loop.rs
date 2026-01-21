@@ -22,7 +22,7 @@ use crate::llm::{
     StopReason, StreamEvent, SystemBlock, SystemPrompt,
 };
 use crate::runtime::AgentInternals;
-use crate::tools::ToolResult;
+use crate::tools::{ToolResult, ToolResultData};
 
 use super::config::AgentConfig;
 use super::executor::ToolExecutor;
@@ -322,8 +322,39 @@ impl StandardAgent {
                 // Cache control will be applied dynamically in apply_cache_control()
                 let tool_result_blocks: Vec<ContentBlock> = tool_results
                     .into_iter()
-                    .map(|(id, result)| {
-                        ContentBlock::tool_result(&id, &result.output, result.is_error)
+                    .flat_map(|(id, result)| {
+                        match result.content {
+                            ToolResultData::Text(text) => {
+                                vec![ContentBlock::tool_result(&id, &text, result.is_error)]
+                            }
+                            ToolResultData::Image { data, media_type } => {
+                                // Encode image data to base64
+                                use base64::Engine;
+                                let base64_data = base64::engine::general_purpose::STANDARD.encode(&data);
+
+                                vec![ContentBlock::ToolResult {
+                                    tool_use_id: id,
+                                    content: None,
+                                    is_error: if result.is_error { Some(true) } else { None },
+                                    cache_control: None,
+                                }, ContentBlock::image(base64_data, media_type)]
+                            }
+                            ToolResultData::Document {
+                                data,
+                                media_type,
+                                description,
+                            } => {
+                                // Encode document data to base64
+                                use base64::Engine;
+                                let base64_data = base64::engine::general_purpose::STANDARD.encode(&data);
+
+                                // For PDFs: two separate blocks as per API spec
+                                vec![
+                                    ContentBlock::tool_result(&id, &description, result.is_error),
+                                    ContentBlock::document(base64_data, media_type),
+                                ]
+                            }
+                        }
                     })
                     .collect();
 

@@ -157,6 +157,12 @@ impl ConversationNamer {
                         ContentBlock::Thinking { .. } | ContentBlock::RedactedThinking { .. } => {
                             // Skip thinking blocks
                         }
+                        ContentBlock::Image { .. } => {
+                            // Skip image blocks - not useful for naming
+                        }
+                        ContentBlock::Document { .. } => {
+                            // Skip document blocks - not useful for naming
+                        }
                     }
                 }
 

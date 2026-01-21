@@ -251,12 +251,25 @@ impl Debugger {
         }
 
         let seq = self.next_sequence();
+
+        // Convert ToolResultData to string for logging
+        use crate::tools::ToolResultData;
+        let output_text = match &result.content {
+            ToolResultData::Text(text) => text.clone(),
+            ToolResultData::Image { data, media_type } => {
+                format!("Image ({}, {} bytes)", media_type, data.len())
+            }
+            ToolResultData::Document { description, data, media_type } => {
+                format!("{} ({}, {} bytes)", description, media_type, data.len())
+            }
+        };
+
         let event = ToolResultEvent {
             event_type: EventType::ToolResult,
             sequence: seq,
             tool_name: tool_name.to_string(),
             tool_id: tool_id.to_string(),
-            output: result.output.clone(),
+            output: output_text,
             is_error: result.is_error,
         };
 

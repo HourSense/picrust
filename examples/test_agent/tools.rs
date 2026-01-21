@@ -13,10 +13,10 @@ pub fn create_registry() -> Result<ToolRegistry> {
     registry.register(ReadTool::new()?);
     registry.register(WriteTool::new()?);
     registry.register(BashTool::new()?);
-    // registry.register(TodoWriteTool::new());
-    // registry.register(GrepTool::new()?);
-    // registry.register(GlobTool::new()?);
-    // registry.register(EditTool::new()?);
+    registry.register(TodoWriteTool::new());
+    registry.register(GrepTool::new()?);
+    registry.register(GlobTool::new()?);
+    registry.register(EditTool::new()?);
 
     Ok(registry)
 }

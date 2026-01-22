@@ -1,2 +1,0 @@
-1. Always maintain documentations in folder called "docs" in this folder. do not write READMEs or any other files in any other place. 
-2. After every user request make contemplate on whatever actions you took and write that into the docs folder. 

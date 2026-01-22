@@ -5,12 +5,15 @@
 //! - `ContextInjection` - Modify messages before each LLM call
 //! - `Debugger` - Log API calls and tool executions for debugging
 //! - `ConversationNamer` - Generate descriptive names for conversations
+//! - `Attachments` - Process file attachments in user messages
 
+mod attachments;
 mod context_injection;
 mod conversation_namer;
 mod debugger;
 mod todo_manager;
 
+pub use attachments::process_attachments;
 pub use context_injection::{
     append_to_last_message, inject_system_reminder, prepend_to_first_user_message,
     BoxedInjection, ContextInjection, FnInjection, InjectionChain, SharedInjection,

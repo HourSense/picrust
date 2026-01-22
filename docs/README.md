@@ -10,6 +10,7 @@ A Rust framework for building AI agents with Claude. Designed for applications t
    - [Prompt Caching](#prompt-caching)
    - [Streaming and History](#streaming-and-history)
    - [Image and PDF Support](#image-and-pdf-support)
+   - [Attachment Support](#attachment-support)
    - [Interrupt Handling](#interrupt-handling)
 4. [Module Reference](#module-reference)
    - [Runtime](#runtime-module)
@@ -417,6 +418,180 @@ Images and PDFs are automatically base64-encoded and sent to Claude:
 - Images and PDFs support prompt caching just like text content
 - The last content block (text, image, or PDF) gets cache control applied
 - This reduces costs when analyzing the same images/documents multiple times
+
+---
+
+### Attachment Support
+
+The SDK supports file attachments in user messages using special tags. Users can include files directly in their messages, and the framework automatically reads and processes them.
+
+#### Basic Usage
+
+Include file attachments in user messages using the `<vibe-work-attachment>` tag:
+
+```rust
+let user_input = r#"Analyze this code:
+<vibe-work-attachment>/path/to/main.rs</vibe-work-attachment>"#;
+
+handle.send_input(user_input).await?;
+```
+
+Multiple attachments can be included in a single message and will be processed in order:
+
+```rust
+let input = r#"Analyze these files:
+<vibe-work-attachment>/path/to/data.csv</vibe-work-attachment>
+<vibe-work-attachment>/path/to/chart.png</vibe-work-attachment>
+<vibe-work-attachment>/path/to/report.pdf</vibe-work-attachment>"#;
+
+handle.send_input(input).await?;
+```
+
+#### Supported File Types
+
+**Text Files:**
+- Extensions: Any file not matching image or PDF extensions
+- Behavior: Read as UTF-8 text with line numbers
+- Limits: Maximum 2000 lines displayed, lines longer than 2000 chars truncated
+- Format: `cat -n` style with file path header
+
+Example output:
+```
+File: /path/to/script.py
+
+     1	import sys
+     2	import os
+     3
+     4	def main():
+     5	    print("Hello, world!")
+```
+
+**Images:**
+- Supported formats: PNG, JPEG, GIF, WebP
+- Maximum size: 5MB per image
+- Behavior: Base64-encoded and sent to Claude's vision API
+- Extensions: `.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`
+
+**PDF Documents:**
+- Supported format: PDF
+- Maximum size: 32MB per document
+- Behavior: Base64-encoded and sent to Claude's document understanding API
+- Extension: `.pdf`
+
+**Directories:**
+- Behavior: Lists directory contents (files and subdirectories)
+- Format: Shows type (DIR/file), size, and name
+- Sorting: Directories first, then files, alphabetically within each group
+
+Example output:
+```
+Directory: /path/to/project
+
+DIR               src
+DIR               tests
+         1.2 KB  README.md
+         4.5 KB  Cargo.toml
+       125.3 KB  main.rs
+```
+
+#### How It Works
+
+1. Framework detects `<vibe-work-attachment>` tags in user input
+2. Extracts file paths and reads each file (in order)
+3. **Deduplicates** files - same file referenced multiple times is only processed once
+4. Creates multi-block user message:
+   - Original text (with tags preserved)
+   - Content block for each attachment (text/image/document/directory)
+5. If a file can't be read, inserts an error message block instead
+
+#### Deduplication
+
+The framework automatically detects and handles duplicate file references - especially useful when using `@` symbol references where the same file might be referenced multiple times:
+
+```rust
+let input = r#"Compare @main.rs with the original:
+<vibe-work-attachment>./main.rs</vibe-work-attachment>
+Also check @main.rs for bugs:
+<vibe-work-attachment>./main.rs</vibe-work-attachment>"#;
+
+// Agent receives:
+// - Text block: Original message
+// - Text block: Content of main.rs (first occurrence)
+// - Text block: "Note: File ./main.rs was already attached above" (second occurrence)
+```
+
+Deduplication is based on resolved absolute paths and helps reduce token usage and API costs.
+
+#### Path Resolution
+
+- **Absolute paths**: Used as-is (`/home/user/file.txt`)
+- **Relative paths**: Resolved from current working directory (`./data/file.txt`)
+
+#### Error Handling
+
+If a file cannot be read (doesn't exist, wrong format, exceeds size limit), an error block is inserted:
+
+```
+Error: Cannot read file /path/to/file.txt - No such file or directory
+```
+
+The agent receives this error and can respond appropriately to the user.
+
+#### Examples
+
+**Analyzing a Code File:**
+```
+Review this code for bugs:
+<vibe-work-attachment>./src/main.rs</vibe-work-attachment>
+```
+
+**Processing an Image:**
+```
+What's in this screenshot?
+<vibe-work-attachment>./screenshots/error.png</vibe-work-attachment>
+```
+
+**Multiple File Analysis:**
+```
+Compare these designs:
+<vibe-work-attachment>./design-v1.png</vibe-work-attachment>
+<vibe-work-attachment>./design-v2.png</vibe-work-attachment>
+```
+
+**PDF Document Review:**
+```
+Summarize this report:
+<vibe-work-attachment>./reports/quarterly-2024.pdf</vibe-work-attachment>
+```
+
+#### Frontend Integration
+
+The `<vibe-work-attachment>` tags are **preserved** in the message text, allowing frontends to:
+- Parse and display attachment badges/pills in the UI
+- Keep tags in messages sent to the backend
+- Show attachment metadata (filename, type, size)
+
+**Message Structure:**
+When attachments are detected, the framework creates a multi-block user message:
+1. Text block: Original user input (with tags intact)
+2. Attachment blocks: One content block per attachment, in order
+   - Text files → `ContentBlock::Text` with formatted content
+   - Images → `ContentBlock::Image` with base64-encoded data
+   - PDFs → `ContentBlock::Document` with base64-encoded data
+   - Directories → `ContentBlock::Text` with directory listing
+   - Errors → `ContentBlock::Text` with error description
+
+**Code Location:**
+- Attachment processor: `src/helpers/attachments.rs`
+- Integration point: `src/agent/standard_loop.rs` (process_turn method)
+- Public API: `crate::helpers::process_attachments()`
+
+#### Limitations
+
+1. **File size limits**: Images max 5MB, PDFs max 32MB, text files display only first 2000 lines
+2. **File type detection**: Based on file extension only (not magic bytes)
+3. **No streaming**: Attachments are read completely before processing starts
+4. **Error recovery**: Individual attachment failures don't block the message
 
 ---
 

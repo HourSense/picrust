@@ -183,7 +183,7 @@ impl Default for InjectionChain {
 
 /// Inject a system reminder into the last assistant or user message
 ///
-/// System reminders use the format `<system-reminder>...</system-reminder>`
+/// System reminders use the format `<vibe-working-agent-system>...</vibe-working-agent-system>`
 /// and are typically added to provide hints without being too intrusive.
 ///
 /// # Example
@@ -192,7 +192,7 @@ impl Default for InjectionChain {
 /// ```
 pub fn inject_system_reminder(messages: &mut Vec<Message>, reminder: &str) {
     if let Some(last_msg) = messages.last_mut() {
-        let reminder_text = format!("\n<system-reminder>\n{}\n</system-reminder>", reminder);
+        let reminder_text = format!("\n<vibe-working-agent-systemreminder>\n{}\n</vibe-working-agent-systemreminder>", reminder);
         last_msg.append_text(&reminder_text);
     }
 }

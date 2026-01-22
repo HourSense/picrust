@@ -15,7 +15,7 @@ use futures::StreamExt;
 use serde_json::Value;
 
 use crate::core::{FrameworkResult, InputMessage};
-use crate::helpers::{ConversationNamer, Debugger};
+use crate::helpers::{process_attachments, ConversationNamer, Debugger};
 use crate::hooks::HookContext;
 use crate::llm::{
     AnthropicProvider, CacheControl, ContentBlock, ContentBlockStart, ContentDelta, Message,
@@ -185,8 +185,34 @@ impl StandardAgent {
 
     /// Process a single user turn (may involve multiple LLM calls for tool use)
     async fn process_turn(&self, internals: &mut AgentInternals, user_input: &str) -> Result<()> {
+        // Check if input contains attachment tags and process them
+        let user_message = if user_input.contains("<vibe-work-attachment>") {
+            tracing::info!("[StandardAgent] Processing attachments in user input");
+
+            // Get base directory from current working directory
+            let base_dir = std::env::current_dir()
+                .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                .to_string_lossy()
+                .to_string();
+
+            // Process attachments
+            let attachment_blocks = process_attachments(user_input, &base_dir);
+
+            // Build message blocks: original text first, then attachments
+            let mut blocks = vec![ContentBlock::Text {
+                text: user_input.to_string(),
+                cache_control: None,
+            }];
+            blocks.extend(attachment_blocks);
+
+            Message::user_with_blocks(blocks)
+        } else {
+            // No attachments, use simple text message
+            Message::user(user_input)
+        };
+
         // Add user message to history
-        internals.session.add_message(Message::user(user_input))?;
+        internals.session.add_message(user_message)?;
 
         // Get tool definitions
         let tool_definitions = self.config.tool_definitions();
@@ -363,7 +389,7 @@ impl StandardAgent {
                 // Add system message indicating the interrupt
                 internals
                     .session
-                    .add_message(Message::assistant("<system>User interrupted this message</system>"))?;
+                    .add_message(Message::assistant("<vibe-working-agent-system>User interrupted this message</vibe-working-agent-system>"))?;
 
                 // Break out of the loop
                 break;
@@ -753,7 +779,7 @@ impl StandardAgent {
 
                         // Append interrupt notification to the assistant's content blocks
                         content_blocks.push(ContentBlock::Text {
-                            text: "<system>User interrupted this message</system>".to_string(),
+                            text: "<vibe-working-agent-system>User interrupted this message</vibe-working-agent-system>".to_string(),
                             cache_control: None,
                         });
 

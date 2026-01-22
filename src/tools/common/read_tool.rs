@@ -114,7 +114,7 @@ impl ReadTool {
             )));
         }
 
-        let mut result = String::new();
+        let mut result = format!("File: {}\n\n", resolved_path);
 
         for (i, line) in lines[start..end].iter().enumerate() {
             let line_num = start + i + 1;

@@ -10,7 +10,10 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use std::collections::HashMap;
+
 use crate::core::{AgentContext, AgentState, FrameworkError, FrameworkResult, InputMessage, OutputChunk};
+use crate::core::output::UserQuestion;
 use crate::permissions::{CheckResult, PermissionManager, PermissionRule, PermissionScope};
 use crate::session::AgentSession;
 
@@ -247,6 +250,14 @@ impl AgentInternals {
         .await;
     }
 
+    /// Set state to WaitingForUserInput
+    pub async fn set_waiting_for_user_input(&self, request_id: impl Into<String>) {
+        self.set_state(AgentState::WaitingForUserInput {
+            request_id: request_id.into(),
+        })
+        .await;
+    }
+
     // =========================================================================
     // Context Methods
     // =========================================================================
@@ -351,6 +362,60 @@ impl AgentInternals {
     /// Use this to programmatically add rules (e.g., from configuration).
     pub fn add_permission_rule(&mut self, rule: PermissionRule, scope: PermissionScope) {
         self.permissions.add_rule(rule, scope);
+    }
+
+    // =========================================================================
+    // User Question Methods
+    // =========================================================================
+
+    /// Ask the user a set of questions and wait for their response
+    ///
+    /// This method:
+    /// 1. Sends an `AskUserQuestion` output chunk with the questions
+    /// 2. Sets state to `WaitingForUserInput`
+    /// 3. Waits for a `UserQuestionResponse` input message
+    /// 4. Returns the answers map (header -> selected answer)
+    ///
+    /// Handles `Interrupt`, `Shutdown`, and channel close gracefully.
+    pub async fn ask_user_question(
+        &mut self,
+        request_id: impl Into<String>,
+        questions: Vec<UserQuestion>,
+    ) -> FrameworkResult<HashMap<String, String>> {
+        let request_id = request_id.into();
+
+        // Send the question request
+        self.send(OutputChunk::AskUserQuestion {
+            request_id: request_id.clone(),
+            questions,
+        });
+
+        // Set state to waiting for user input
+        self.set_waiting_for_user_input(&request_id).await;
+
+        // Wait for response
+        match self.receive().await {
+            Some(InputMessage::UserQuestionResponse { request_id: resp_id, answers }) => {
+                if resp_id == request_id {
+                    Ok(answers)
+                } else {
+                    // Mismatched request ID - shouldn't happen
+                    tracing::warn!(
+                        "Question response for {} but expected {}",
+                        resp_id,
+                        request_id
+                    );
+                    Err(FrameworkError::Other(format!(
+                        "Mismatched request ID: expected {}, got {}",
+                        request_id, resp_id
+                    )))
+                }
+            }
+            Some(InputMessage::Interrupt) => Err(FrameworkError::Interrupted),
+            Some(InputMessage::Shutdown) => Err(FrameworkError::Shutdown),
+            None => Err(FrameworkError::ChannelClosed),
+            _ => Err(FrameworkError::Other("Unexpected message while waiting for user response".into())),
+        }
     }
 
     /// Check if running in interactive mode

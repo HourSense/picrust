@@ -14,6 +14,12 @@ pub enum AgentState {
     /// Agent is waiting for user permission decision
     WaitingForPermission,
 
+    /// Agent is waiting for user to answer questions
+    WaitingForUserInput {
+        /// Unique ID of the question request
+        request_id: String,
+    },
+
     /// Agent is executing a tool
     ExecutingTool {
         /// Name of the tool being executed
@@ -58,7 +64,7 @@ impl AgentState {
     pub fn is_waiting(&self) -> bool {
         matches!(
             self,
-            AgentState::Idle | AgentState::WaitingForPermission
+            AgentState::Idle | AgentState::WaitingForPermission | AgentState::WaitingForUserInput { .. }
         )
     }
 
@@ -83,6 +89,13 @@ impl AgentState {
             session_id: session_id.into(),
         }
     }
+
+    /// Create a waiting for user input state
+    pub fn waiting_for_user_input(request_id: impl Into<String>) -> Self {
+        AgentState::WaitingForUserInput {
+            request_id: request_id.into(),
+        }
+    }
 }
 
 impl Default for AgentState {
@@ -97,6 +110,9 @@ impl std::fmt::Display for AgentState {
             AgentState::Idle => write!(f, "Idle"),
             AgentState::Processing => write!(f, "Processing"),
             AgentState::WaitingForPermission => write!(f, "Waiting for permission"),
+            AgentState::WaitingForUserInput { request_id } => {
+                write!(f, "Waiting for user input: {}", request_id)
+            }
             AgentState::ExecutingTool { tool_name, .. } => {
                 write!(f, "Executing tool: {}", tool_name)
             }

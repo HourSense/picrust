@@ -11,7 +11,7 @@
 use std::io::{self, Write};
 use std::sync::Arc;
 
-use crate::core::OutputChunk;
+use crate::core::{InputMessage, OutputChunk};
 use crate::helpers::TodoListManager;
 use crate::permissions::PermissionDecision;
 use crate::runtime::AgentHandle;
@@ -241,6 +241,34 @@ impl ConsoleRenderer {
 
                             // Send response back to agent
                             let _ = self.handle.send_permission_response(&tool_name, allowed, remember).await;
+                        }
+
+                        // User questions
+                        OutputChunk::AskUserQuestion { request_id, questions } => {
+                            if in_text {
+                                self.console.println();
+                                in_text = false;
+                            }
+
+                            // Display questions and collect answers
+                            let mut answers = std::collections::HashMap::new();
+                            for q in &questions {
+                                self.console.print_system(&format!("[{}] {}", q.header, q.question));
+                                for (i, opt) in q.options.iter().enumerate() {
+                                    self.console.print_system(&format!("  {}. {} - {}", i + 1, opt.label, opt.description));
+                                }
+                                // For CLI, just use first option as default for now
+                                // A full implementation would prompt user for input
+                                if let Some(first_option) = q.options.first() {
+                                    answers.insert(q.header.clone(), first_option.label.clone());
+                                }
+                            }
+
+                            // Send response back to agent
+                            let _ = self.handle.send(InputMessage::UserQuestionResponse {
+                                request_id,
+                                answers,
+                            }).await;
                         }
 
                         // Status updates

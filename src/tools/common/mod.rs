@@ -9,7 +9,6 @@
 //! - `GlobTool` - Find files by pattern
 //! - `GrepTool` - Search file contents
 //! - `TodoWriteTool` - Manage todo lists
-//! - `WebFetchTool` - Fetch/scrape web pages using Firecrawl
 //! - `PresentFileTool` - Present files to the user
 
 pub mod ask_user_question;

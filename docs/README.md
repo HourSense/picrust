@@ -11,6 +11,7 @@ A Rust framework for building AI agents with Claude. Designed for applications t
    - [Streaming and History](#streaming-and-history)
    - [Image and PDF Support](#image-and-pdf-support)
    - [Attachment Support](#attachment-support)
+   - [Ask User Questions](#ask-user-questions)
    - [Interrupt Handling](#interrupt-handling)
 4. [Module Reference](#module-reference)
    - [Runtime](#runtime-module)
@@ -592,6 +593,215 @@ When attachments are detected, the framework creates a multi-block user message:
 2. **File type detection**: Based on file extension only (not magic bytes)
 3. **No streaming**: Attachments are read completely before processing starts
 4. **Error recovery**: Individual attachment failures don't block the message
+
+---
+
+### Ask User Questions
+
+The SDK includes an `AskUserQuestion` tool that allows agents to pause execution and ask users multiple-choice questions. This enables interactive workflows where the agent needs clarification or user preferences before proceeding.
+
+#### Overview
+
+The agent can ask 1-4 questions at a time, each with 2-4 options. Questions support both single-select (radio buttons) and multi-select (checkboxes) modes. The framework handles the communication flow between agent and frontend.
+
+#### Message Flow
+
+```
+Agent                          Frontend
+  |                                |
+  |-- OutputChunk::AskUserQuestion ->|  (display question UI)
+  |                                  |
+  |<- InputMessage::UserQuestionResponse (user selects answers)
+  |                                  |
+  | (agent continues with answers)   |
+```
+
+#### Data Structures
+
+**Output: `OutputChunk::AskUserQuestion`**
+
+When the agent needs user input, it emits:
+
+```rust
+OutputChunk::AskUserQuestion {
+    request_id: String,           // Unique ID to match request/response
+    questions: Vec<UserQuestion>,
+}
+```
+
+Each `UserQuestion` contains:
+
+```rust
+pub struct UserQuestion {
+    pub question: String,         // Full question text
+    pub header: String,           // Short label (max 12 chars)
+    pub options: Vec<QuestionOption>,
+    pub multi_select: bool,       // Allow multiple selections
+}
+
+pub struct QuestionOption {
+    pub label: String,            // Display text (1-5 words)
+    pub description: String,      // Explanation of the option
+}
+```
+
+**Input: `InputMessage::UserQuestionResponse`**
+
+After the user makes selections, send back:
+
+```rust
+InputMessage::UserQuestionResponse {
+    request_id: String,                    // Must match request
+    answers: HashMap<String, String>,      // header -> selected label(s)
+}
+```
+
+For multi-select questions, join multiple labels with commas: `"Option A, Option B"`.
+
+#### Example Usage
+
+**Agent asks:**
+```json
+{
+  "name": "AskUserQuestion",
+  "input": {
+    "questions": [{
+      "question": "Which authentication method should we implement?",
+      "header": "Auth",
+      "multiSelect": false,
+      "options": [
+        { "label": "JWT (Recommended)", "description": "Stateless tokens, good for APIs" },
+        { "label": "Session cookies", "description": "Traditional server-side sessions" },
+        { "label": "OAuth 2.0", "description": "Third-party authentication" }
+      ]
+    }]
+  }
+}
+```
+
+**User responds with:**
+```rust
+InputMessage::UserQuestionResponse {
+    request_id: "abc-123",
+    answers: {
+        "Auth": "JWT (Recommended)"
+    }
+}
+```
+
+**Agent receives:**
+```
+User responded with the following answers:
+{
+  "Auth": "JWT (Recommended)"
+}
+```
+
+#### Tauri Integration
+
+**1. Handle the output chunk:**
+
+```rust
+match chunk {
+    OutputChunk::AskUserQuestion { request_id, questions } => {
+        // Emit to frontend
+        app_handle.emit_all("ask-user-question", serde_json::json!({
+            "requestId": request_id,
+            "questions": questions.iter().map(|q| serde_json::json!({
+                "question": q.question,
+                "header": q.header,
+                "multiSelect": q.multi_select,
+                "options": q.options.iter().map(|o| serde_json::json!({
+                    "label": o.label,
+                    "description": o.description,
+                })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+        })).unwrap();
+    }
+    // ... other cases
+}
+```
+
+**2. Create command to send response:**
+
+```rust
+#[tauri::command]
+async fn send_question_response(
+    request_id: String,
+    answers: HashMap<String, String>,
+    state: tauri::State<'_, AgentState>,
+) -> Result<(), String> {
+    let handle = state.handle.lock().await;
+    if let Some(h) = handle.as_ref() {
+        h.send(InputMessage::UserQuestionResponse {
+            request_id,
+            answers,
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+```
+
+**3. Frontend (React/TypeScript):**
+
+```typescript
+interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+interface UserQuestion {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiSelect: boolean;
+}
+
+// Listen for questions
+listen<AskUserQuestionEvent>("ask-user-question", (event) => {
+  setQuestions(event.payload.questions);
+  setRequestId(event.payload.requestId);
+  setShowQuestionModal(true);
+});
+
+// Send response when user submits
+async function handleSubmit(answers: Record<string, string>) {
+  await invoke("send_question_response", {
+    requestId: requestId,
+    answers: answers,
+  });
+  setShowQuestionModal(false);
+}
+```
+
+#### Agent State
+
+While waiting for a response, the agent enters:
+
+```rust
+AgentState::WaitingForUserInput { request_id: String }
+```
+
+You can check this state to show a loading/waiting indicator in the UI.
+
+#### Validation Rules
+
+- **1-4 questions** per request
+- **2-4 options** per question
+- Headers should be short (max 12 characters)
+- Users can always provide custom "Other" input
+
+#### Handling Interrupts
+
+If the user cancels:
+
+```rust
+handle.interrupt().await?;
+```
+
+The tool returns an error result to the agent, which handles it gracefully.
 
 ---
 

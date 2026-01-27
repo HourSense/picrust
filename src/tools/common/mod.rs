@@ -9,12 +9,14 @@
 //! - `GlobTool` - Find files by pattern
 //! - `GrepTool` - Search file contents
 //! - `TodoWriteTool` - Manage todo lists
+//! - `PresentFileTool` - Present files to the user
 
 pub mod ask_user_question;
 pub mod bash;
 pub mod edit_tool;
 pub mod glob_tool;
 pub mod grep_tool;
+pub mod present_file;
 pub mod read_tool;
 pub mod todo;
 pub mod write_tool;
@@ -24,6 +26,7 @@ pub use bash::BashTool;
 pub use edit_tool::EditTool;
 pub use glob_tool::GlobTool;
 pub use grep_tool::GrepTool;
+pub use present_file::PresentFileTool;
 pub use read_tool::ReadTool;
 pub use todo::TodoWriteTool;
 pub use write_tool::WriteTool;

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-# HTTP client for Anthropic API
-reqwest = { version = "0.11", features = ["json", "stream"] }
+# HTTP client for Anthropic API (also used by MCP via rmcp)
+reqwest = { version = "0.12", features = ["json", "stream"] }
 
 # Async runtime
 tokio = { version = "1.0", features = ["full", "process"] }
@@ -49,3 +49,10 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tempfile = "3.24.0"
 regex = "1.12.2"
+
+# MCP (Model Context Protocol) support
+rmcp = { version = "0.14", features = ["client", "transport-streamable-http-client", "transport-streamable-http-client-reqwest"] }
+
+[[example]]
+name = "mcp_agent"
+path = "examples/mcp_agent/main.rs"

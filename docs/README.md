@@ -13,6 +13,7 @@ A Rust framework for building AI agents with Claude. Designed for applications t
    - [Attachment Support](#attachment-support)
    - [Ask User Questions](#ask-user-questions)
    - [Interrupt Handling](#interrupt-handling)
+   - [MCP Integration](#mcp-model-context-protocol-integration)
 4. [Module Reference](#module-reference)
    - [Runtime](#runtime-module)
    - [Session](#session-module)
@@ -941,6 +942,418 @@ for (index, block) in content_blocks.iter().enumerate() {
 2. **Long-running tools** - Individual tools that take a very long time will complete fully before the interrupt is detected. Future enhancement could pass cancellation tokens to tools for graceful internal interruption.
 
 3. **Shutdown handling** - Currently only handles `InputMessage::Interrupt`. `InputMessage::Shutdown` could be handled similarly for graceful shutdown during streaming/execution.
+
+---
+
+### MCP (Model Context Protocol) Integration
+
+The SDK includes comprehensive support for MCP (Model Context Protocol), allowing your agents to access tools from external MCP servers. This enables seamless integration with a growing ecosystem of MCP tools and services.
+
+#### What is MCP?
+
+MCP is an open protocol that standardizes how AI applications connect to external tools and data sources. MCP servers provide tools that can be dynamically discovered and used by AI agents. Learn more at [modelcontextprotocol.io](https://modelcontextprotocol.io).
+
+#### Key Features
+
+- **Dynamic Tool Discovery** - Automatically fetch and expose tools from any MCP server
+- **Tool Namespacing** - Avoid conflicts with `server_id__tool_name` format
+- **JWT Refresh Support** - Built-in callback system for expiring tokens
+- **Transparent Integration** - MCP tools appear identical to native tools
+- **Multiple Servers** - Connect to multiple MCP servers simultaneously
+- **Thread-Safe** - Safe to use across concurrent agents
+
+#### Quick Start
+
+**1. Basic Setup (No Auth)**
+
+```rust
+use shadow_agent_sdk::mcp::{MCPServerManager, MCPToolProvider};
+use shadow_agent_sdk::tools::ToolRegistry;
+use rmcp::transport::StreamableHttpClientTransport;
+use rmcp::ServiceExt;
+use std::sync::Arc;
+
+// Create transport
+let transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp");
+let service = ().serve(transport).await?;
+
+// Add to MCP manager
+let mcp_manager = Arc::new(MCPServerManager::new());
+mcp_manager.add_service("filesystem", service).await?;
+
+// Create tool provider and add to registry
+let mcp_provider = Arc::new(MCPToolProvider::new(mcp_manager));
+let mut tool_registry = ToolRegistry::new();
+tool_registry.add_provider(mcp_provider).await?;
+
+// Now all MCP tools are available!
+let tools = Arc::new(tool_registry);
+```
+
+**2. With Static Auth Headers**
+
+```rust
+// Create transport with auth
+let transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp")
+    .with_header("Authorization", "Bearer static-token")
+    .with_header("X-Api-Key", "your-api-key");
+
+let service = ().serve(transport).await?;
+mcp_manager.add_service("filesystem", service).await?;
+```
+
+**3. With JWT Refresh (Recommended for Proxied Servers)**
+
+For servers requiring JWT tokens that expire, use the service refresher callback:
+
+```rust
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
+
+// Track when we last refreshed
+let last_refresh = Arc::new(RwLock::new(Instant::now()));
+let jwt_provider = Arc::new(YourJwtProvider::new());
+
+// Create refresher callback (called before EVERY MCP operation)
+let refresher = {
+    let last_refresh = last_refresh.clone();
+    let jwt = jwt_provider.clone();
+
+    move || {
+        let last_refresh = last_refresh.clone();
+        let jwt = jwt.clone();
+
+        async move {
+            // Check if we need to refresh (e.g., every 50 minutes for 1hr JWT)
+            let mut last = last_refresh.write().await;
+            if last.elapsed() < Duration::from_secs(50 * 60) {
+                return Ok(None); // Still valid, no refresh needed
+            }
+
+            // Get fresh JWT and create new service
+            let token = jwt.get_fresh_token().await?;
+            let transport = StreamableHttpClientTransport::from_uri("https://backend/mcp-proxy")
+                .with_header("Authorization", format!("Bearer {}", token));
+            let service = ().serve(transport).await?;
+
+            *last = Instant::now();
+            Ok(Some(service)) // Replace with new service
+        }
+    }
+};
+
+// Create initial service
+let initial_token = jwt_provider.get_fresh_token().await?;
+let transport = StreamableHttpClientTransport::from_uri("https://backend/mcp-proxy")
+    .with_header("Authorization", format!("Bearer {}", initial_token));
+let service = ().serve(transport).await?;
+
+// Add to manager with refresher
+mcp_manager.add_service_with_refresher("remote-mcp", service, refresher).await?;
+```
+
+#### How It Works
+
+**Service Refresher Pattern**
+
+The refresher callback is called **before every MCP operation** (`list_tools`, `call_tool`):
+- Returns `Ok(None)` if service is still valid (no refresh)
+- Returns `Ok(Some(new_service))` to replace the service
+- Returns `Err(...)` if refresh failed (continues with existing service)
+
+This pattern mirrors the LLM auth provider and gives you complete control over token refresh logic.
+
+**Thread Safety**
+
+- Service is wrapped in `Arc<RwLock<...>>` for safe concurrent access
+- Read locks allow multiple agents to use the service simultaneously
+- Write lock (for refresh) waits for all reads to complete before swapping service
+- In-flight tool calls complete with old service, new calls use new service
+
+**Tool Namespacing**
+
+MCP tools are automatically namespaced to avoid conflicts:
+- **Server ID**: `filesystem`
+- **Original tool name**: `read_file`
+- **Exposed to agent**: `filesystem__read_file`
+
+The double underscore (`__`) is used because Anthropic's API only allows `[a-zA-Z0-9_-]` in tool names.
+
+#### Complete Example
+
+```rust
+use shadow_agent_sdk::{
+    agent::{AgentConfig, StandardAgent},
+    llm::AnthropicProvider,
+    mcp::{MCPServerManager, MCPToolProvider},
+    runtime::AgentRuntime,
+    session::AgentSession,
+    tools::ToolRegistry,
+};
+use rmcp::transport::StreamableHttpClientTransport;
+use rmcp::ServiceExt;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Create LLM provider
+    let llm = Arc::new(AnthropicProvider::from_env()?);
+
+    // Create MCP manager
+    let mcp_manager = Arc::new(MCPServerManager::new());
+
+    // Connect to MCP server
+    let transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp");
+    let service = ().serve(transport).await?;
+    mcp_manager.add_service("filesystem", service).await?;
+
+    // Create tool registry with MCP provider
+    let mut tool_registry = ToolRegistry::new();
+    let mcp_provider = Arc::new(MCPToolProvider::new(mcp_manager));
+    tool_registry.add_provider(mcp_provider).await?;
+    let tools = Arc::new(tool_registry);
+
+    println!("Available tools: {:?}", tools.tool_names());
+    // Output: ["filesystem__read_file", "filesystem__write_file", ...]
+
+    // Create agent
+    let runtime = AgentRuntime::new();
+    let session = AgentSession::new("mcp-session", "assistant", "MCP Agent", "")?;
+
+    let config = AgentConfig::new("You are a helpful assistant with access to filesystem tools.")
+        .with_tools(tools)
+        .with_streaming(true);
+
+    let agent = StandardAgent::new(config, llm);
+    let handle = runtime.spawn(session, |internals| agent.run(internals)).await;
+
+    // Use MCP tools!
+    handle.send_input("Read the file ./README.md using filesystem__read_file").await?;
+
+    // Process output
+    let mut rx = handle.subscribe();
+    while let Ok(chunk) = rx.recv().await {
+        match chunk {
+            OutputChunk::TextDelta(text) => print!("{}", text),
+            OutputChunk::Done => break,
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+```
+
+#### Tauri Integration
+
+For Tauri apps with a backend proxy server that requires JWT authentication:
+
+```rust
+// In your Tauri backend
+
+pub struct JwtProvider {
+    auth_service: Arc<YourAuthService>,
+    cached_token: Arc<RwLock<Option<CachedToken>>>,
+}
+
+struct CachedToken {
+    token: String,
+    expires_at: Instant,
+}
+
+impl JwtProvider {
+    pub async fn get_fresh_token(&self) -> Result<String> {
+        // Check cache first
+        {
+            let cache = self.cached_token.read().await;
+            if let Some(cached) = cache.as_ref() {
+                if cached.expires_at > Instant::now() + Duration::from_secs(5 * 60) {
+                    return Ok(cached.token.clone());
+                }
+            }
+        }
+
+        // Refresh token
+        let mut cache = self.cached_token.write().await;
+        let new_token = self.auth_service.refresh_jwt().await?;
+        let expires_at = Instant::now() + Duration::from_secs(60 * 60); // 1 hour
+
+        *cache = Some(CachedToken {
+            token: new_token.clone(),
+            expires_at,
+        });
+
+        Ok(new_token)
+    }
+}
+
+// Setup MCP with JWT refresh
+let jwt_provider = Arc::new(JwtProvider::new(auth_service));
+
+let refresher = {
+    let jwt = jwt_provider.clone();
+    let last_refresh = Arc::new(RwLock::new(Instant::now()));
+
+    move || {
+        let jwt = jwt.clone();
+        let last_refresh = last_refresh.clone();
+
+        async move {
+            let mut last = last_refresh.write().await;
+
+            // Refresh every 50 minutes (for 1hr tokens)
+            if last.elapsed() < Duration::from_secs(50 * 60) {
+                return Ok(None);
+            }
+
+            let token = jwt.get_fresh_token().await?;
+            let transport = StreamableHttpClientTransport::from_uri("https://your-backend.com/mcp-proxy")
+                .with_header("Authorization", format!("Bearer {}", token));
+            let service = ().serve(transport).await?;
+
+            *last = Instant::now();
+            Ok(Some(service))
+        }
+    }
+};
+
+// Create initial service
+let initial_token = jwt_provider.get_fresh_token().await?;
+let transport = StreamableHttpClientTransport::from_uri("https://your-backend.com/mcp-proxy")
+    .with_header("Authorization", format!("Bearer {}", initial_token));
+let service = ().serve(transport).await?;
+
+// Add to manager
+mcp_manager.add_service_with_refresher("remote-mcp", service, refresher).await?;
+```
+
+#### Multiple MCP Servers
+
+You can connect to multiple MCP servers simultaneously:
+
+```rust
+// Local filesystem server
+let fs_transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp");
+let fs_service = ().serve(fs_transport).await?;
+mcp_manager.add_service("filesystem", fs_service).await?;
+
+// Remote database server with auth
+let db_transport = StreamableHttpClientTransport::from_uri("https://db-server.com/mcp")
+    .with_header("Authorization", "Bearer db-token");
+let db_service = ().serve(db_transport).await?;
+mcp_manager.add_service("database", db_service).await?;
+
+// Web search server
+let search_transport = StreamableHttpClientTransport::from_uri("https://search-api.com/mcp")
+    .with_header("X-Api-Key", "search-key");
+let search_service = ().serve(search_transport).await?;
+mcp_manager.add_service("websearch", search_service).await?;
+
+// Tools will be namespaced:
+// - filesystem__read_file, filesystem__write_file
+// - database__query, database__insert
+// - websearch__search, websearch__get_page
+```
+
+#### Error Handling
+
+If an MCP server is unavailable or a tool call fails:
+
+```rust
+// Server connection failure
+match mcp_manager.add_service("broken", service).await {
+    Ok(_) => println!("Connected!"),
+    Err(e) => eprintln!("Failed to connect: {}", e),
+}
+
+// Tool call failure (handled automatically by framework)
+// The agent receives a ToolResult::error() and can respond accordingly
+```
+
+#### Best Practices
+
+1. **Use service refresher for any auth that expires** - Don't rely on manual refresh
+2. **Cache tokens in your JWT provider** - Avoid unnecessary token refresh calls
+3. **Set refresh interval below expiry** - E.g., 50 minutes for 60-minute tokens
+4. **Handle refresh failures gracefully** - Return `Err(...)` to continue with existing service
+5. **Test with network interruptions** - Ensure reconnection works properly
+6. **Use descriptive server IDs** - They appear in tool names (`server_id__tool_name`)
+
+#### Debugging
+
+Enable debug mode to see MCP operations:
+
+```rust
+let config = AgentConfig::new("...")
+    .with_debug(true);
+
+// Logs show:
+// - [MCPServer] Connecting to 'filesystem' at http://localhost:8005/mcp
+// - [MCPServer] Got 5 tools from 'filesystem'
+// - [MCPServer] Checking if service needs refresh for 'filesystem'
+// - [MCPServer] Service still valid for 'filesystem'
+// - [MCPServer] Calling tool 'read_file' on server 'filesystem'
+```
+
+#### API Reference
+
+**MCPServerManager**
+
+```rust
+// Add service without refresh
+mcp_manager.add_service(id, service).await?;
+
+// Add service with refresh callback
+mcp_manager.add_service_with_refresher(id, service, refresher).await?;
+
+// Add from config (convenience for simple URIs)
+mcp_manager.add_server(MCPServerConfig::new(id, uri)).await?;
+
+// Management
+mcp_manager.get_server(id).await;
+mcp_manager.server_ids().await;
+mcp_manager.server_count().await;
+mcp_manager.reconnect_server(id).await?;
+mcp_manager.health_check_all().await;
+```
+
+**MCPServer**
+
+```rust
+// Create from service (no refresh)
+let server = MCPServer::from_service(id, service);
+
+// Create with refresh callback
+let server = MCPServer::with_service_refresher(id, service, refresher);
+
+// Create from URI (convenience)
+let server = MCPServer::new(MCPServerConfig::new(id, uri)).await?;
+
+// Operations
+server.list_tools().await?;
+server.call_tool(name, arguments).await?;
+server.health_check().await?;
+server.reconnect().await?; // Only works with URI-based servers
+```
+
+**MCPToolProvider**
+
+```rust
+let provider = MCPToolProvider::new(mcp_manager);
+tool_registry.add_provider(Arc::new(provider)).await?;
+
+// Implements ToolProvider trait:
+provider.get_tools().await?;  // Returns all MCP tools
+provider.refresh().await?;     // Refreshes tool list
+provider.name();               // Returns "mcp"
+provider.is_dynamic();         // Returns true
+```
+
+#### See Also
+
+- Example: `examples/mcp_agent/` - Complete MCP agent example
+- rmcp documentation: [crates.io/crates/rmcp](https://crates.io/crates/rmcp)
+- MCP specification: [modelcontextprotocol.io](https://modelcontextprotocol.io)
 
 ---
 

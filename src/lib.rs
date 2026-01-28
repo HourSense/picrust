@@ -17,3 +17,6 @@ pub mod agent;
 
 // Hooks for intercepting agent behavior
 pub mod hooks;
+
+// MCP (Model Context Protocol) support
+pub mod mcp;

@@ -1,6 +1,8 @@
 //! Tool registry for managing available tools
 //!
 //! The registry holds all tools that are available to the agent.
+//! It supports both static tools (registered directly) and dynamic tools
+//! from providers (like MCP servers).
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -8,13 +10,18 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use serde_json::Value;
 
+use super::provider::ToolProvider;
 use super::tool::{Tool, ToolInfo, ToolResult};
 use crate::llm::ToolDefinition;
 use crate::runtime::AgentInternals;
 
 /// Registry that holds all available tools
 pub struct ToolRegistry {
+    /// Static tools registered directly
     tools: HashMap<String, Arc<dyn Tool>>,
+
+    /// Dynamic tool providers (MCP, etc.)
+    providers: Vec<Arc<dyn ToolProvider>>,
 }
 
 impl ToolRegistry {
@@ -22,14 +29,87 @@ impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: HashMap::new(),
+            providers: Vec::new(),
         }
     }
 
-    /// Register a tool in the registry
+    /// Register a static tool in the registry
     pub fn register<T: Tool + 'static>(&mut self, tool: T) {
         let name = tool.name().to_string();
         tracing::info!("Registering tool: {}", name);
         self.tools.insert(name, Arc::new(tool));
+    }
+
+    /// Add a tool provider (MCP, etc.)
+    ///
+    /// This will immediately fetch all tools from the provider and add them to the registry.
+    /// Returns an error if any tool name conflicts with existing tools.
+    pub async fn add_provider(&mut self, provider: Arc<dyn ToolProvider>) -> Result<()> {
+        tracing::info!(
+            "[ToolRegistry] Adding provider '{}' (dynamic: {})",
+            provider.name(),
+            provider.is_dynamic()
+        );
+
+        let tools = provider.get_tools().await?;
+
+        for tool in tools {
+            let name = tool.name().to_string();
+
+            // Check for conflicts
+            if self.tools.contains_key(&name) {
+                return Err(anyhow::anyhow!(
+                    "Tool name conflict: '{}' already exists (from provider '{}')",
+                    name,
+                    provider.name()
+                ));
+            }
+
+            tracing::info!(
+                "[ToolRegistry] Registering tool '{}' from provider '{}'",
+                name,
+                provider.name()
+            );
+            self.tools.insert(name, tool);
+        }
+
+        self.providers.push(provider);
+
+        Ok(())
+    }
+
+    /// Refresh all dynamic providers
+    ///
+    /// This will re-fetch tools from all dynamic providers and update the registry.
+    /// Useful for MCP servers where tools can change at runtime.
+    pub async fn refresh_providers(&mut self) -> Result<()> {
+        tracing::info!("[ToolRegistry] Refreshing all dynamic providers");
+
+        // Remove all tools from providers
+        let provider_names: Vec<_> = self.providers.iter().map(|p| p.name()).collect();
+
+        self.tools.retain(|name, _| {
+            // Keep static tools, remove provider tools
+            !provider_names.iter().any(|p| name.starts_with(&format!("{}:", p)))
+        });
+
+        // Re-add tools from all providers
+        for provider in &self.providers {
+            if provider.is_dynamic() {
+                provider.refresh().await?;
+            }
+
+            let tools = provider.get_tools().await?;
+
+            for tool in tools {
+                let name = tool.name().to_string();
+                self.tools.insert(name, tool);
+            }
+        }
+
+        tracing::info!("[ToolRegistry] Provider refresh complete");
+
+        Ok(())
     }
 
     /// Get a tool by name

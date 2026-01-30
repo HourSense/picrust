@@ -3,20 +3,15 @@
 //! Wraps rmcp service to manage connections to individual MCP servers
 
 use anyhow::{anyhow, Result};
-use rmcp::model::{CallToolRequestParams, CallToolResult, ListToolsResult, Tool};
+use rmcp::model::{CallToolRequestParams, CallToolResult, Tool};
 use rmcp::service::RunningService;
-use rmcp::transport::{
-    streamable_http_client::StreamableHttpClientTransportConfig,
-    StreamableHttpClientTransport,
-};
-use rmcp::{RoleClient, ServiceExt};
+use rmcp::transport::StreamableHttpClientTransport;
+use rmcp::RoleClient;
 use serde_json::{Map, Value};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
-use super::config::MCPServerConfig;
 
 /// The concrete transport type we use for HTTP MCP connections
 pub type HttpClientTransport = StreamableHttpClientTransport<reqwest::Client>;
@@ -25,17 +20,24 @@ pub type HttpClientTransport = StreamableHttpClientTransport<reqwest::Client>;
 pub type ServiceRefreshFuture =
     Pin<Box<dyn Future<Output = Result<Option<RunningService<RoleClient, ()>>>> + Send>>;
 
-/// Trait for providing MCP service with optional refresh logic
+/// Trait for providing MCP service with refresh/reconnection logic
 ///
-/// This is called before each MCP operation (list_tools, call_tool).
-/// Implement this to handle JWT expiration, token refresh, etc.
+/// This is called:
+/// 1. Before each MCP operation (to check JWT expiry, etc.)
+/// 2. When connection failures are detected (to force reconnect)
 ///
-/// Return:
-/// - `Ok(None)` - current service is still valid, no refresh needed
-/// - `Ok(Some(service))` - replace current service with this new one
-/// - `Err(...)` - refresh failed
+/// The refresher MUST return a service. It's responsible for:
+/// - Checking if the current service is still valid (token not expired)
+/// - Creating a new service if needed (token expired or connection dead)
+/// - Caching to avoid unnecessary reconnections
+///
+/// The framework will call this frequently, so implement caching!
 pub trait ServiceRefresher: Send + Sync {
-    /// Check if service needs refresh and optionally return a new service
+    /// Get or create a valid service
+    ///
+    /// Returns a service that is ready to use. This can be:
+    /// - The same cached service (if still valid)
+    /// - A newly created service (if token expired or forced reconnect)
     fn refresh(&self) -> ServiceRefreshFuture;
 }
 
@@ -68,58 +70,29 @@ pub struct MCPServer {
     /// Unique identifier for this server
     id: String,
 
-    /// URI of the server (optional - only used for reconnection)
-    uri: Option<String>,
-
     /// The underlying rmcp service (None if not connected)
     service: Arc<RwLock<Option<RunningService<RoleClient, ()>>>>,
 
-    /// Optional service refresher callback (for JWT expiration, etc.)
-    refresher: Option<Arc<dyn ServiceRefresher>>,
+    /// Service refresher callback (REQUIRED - handles both JWT refresh and reconnection)
+    refresher: Arc<dyn ServiceRefresher>,
 }
 
 impl std::fmt::Debug for MCPServer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MCPServer")
             .field("id", &self.id)
-            .field("uri", &self.uri)
-            .field("has_refresher", &self.refresher.is_some())
             .finish()
     }
 }
 
 impl MCPServer {
-    /// Create a new MCP server from an existing RunningService
-    ///
-    /// For simple cases without token refresh. For JWT/auth scenarios,
-    /// use `with_service_refresher()` instead.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use rmcp::transport::StreamableHttpClientTransport;
-    /// use rmcp::ServiceExt;
-    ///
-    /// let transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp")
-    ///     .with_header("Authorization", "Bearer token");
-    /// let service = ().serve(transport).await?;
-    /// let server = MCPServer::from_service("my-server", service);
-    /// ```
-    pub fn from_service(id: impl Into<String>, service: RunningService<RoleClient, ()>) -> Self {
-        let id = id.into();
-        tracing::info!("[MCPServer] Created MCP server '{}'", id);
-
-        Self {
-            id,
-            uri: None,
-            service: Arc::new(RwLock::new(Some(service))),
-            refresher: None,
-        }
-    }
-
     /// Create an MCP server with a service refresher callback
     ///
-    /// The refresher is called before EVERY operation (list_tools, call_tool).
-    /// This is useful for JWT tokens that expire and need periodic refresh.
+    /// The refresher is REQUIRED and is called:
+    /// - Before each MCP operation (to check JWT expiry, etc.)
+    /// - When connection failures are detected (to force reconnect)
+    ///
+    /// The refresher should implement caching to avoid unnecessary reconnections.
     ///
     /// # Example
     /// ```no_run
@@ -129,104 +102,69 @@ impl MCPServer {
     /// use rmcp::transport::StreamableHttpClientTransport;
     /// use rmcp::ServiceExt;
     ///
-    /// // Track when we last refreshed
+    /// // Cached service with timestamp
+    /// let cached_service = Arc::new(RwLock::new(None));
     /// let last_refresh = Arc::new(RwLock::new(Instant::now()));
     /// let jwt_provider = Arc::new(MyJwtProvider::new());
     ///
     /// let refresher = {
+    ///     let cached = cached_service.clone();
     ///     let last_refresh = last_refresh.clone();
     ///     let jwt = jwt_provider.clone();
     ///
     ///     move || {
+    ///         let cached = cached.clone();
     ///         let last_refresh = last_refresh.clone();
     ///         let jwt = jwt.clone();
     ///
     ///         async move {
-    ///             // Check if we need to refresh (e.g., every 50 minutes for 1hr JWT)
-    ///             let mut last = last_refresh.write().await;
-    ///             if last.elapsed() < Duration::from_secs(50 * 60) {
-    ///                 return Ok(None); // Still valid
+    ///             // Check if cached service is still valid
+    ///             {
+    ///                 let last = last_refresh.read().await;
+    ///                 if last.elapsed() < Duration::from_secs(50 * 60) {
+    ///                     // Token still fresh, return cached service
+    ///                     let cached_guard = cached.read().await;
+    ///                     if let Some(service) = cached_guard.as_ref() {
+    ///                         return Ok(service.clone()); // Reuse cached
+    ///                     }
+    ///                 }
     ///             }
     ///
-    ///             // Get fresh JWT and create new service
+    ///             // Create new service
     ///             let token = jwt.get_fresh_token().await?;
-    ///             let transport = StreamableHttpClientTransport::from_uri("https://my-backend/mcp")
+    ///             let transport = StreamableHttpClientTransport::from_uri("https://backend/mcp")
     ///                 .with_header("Authorization", format!("Bearer {}", token));
     ///             let service = ().serve(transport).await?;
     ///
-    ///             *last = Instant::now();
-    ///             Ok(Some(service)) // Use this new service
+    ///             // Cache it
+    ///             *cached.write().await = Some(service.clone());
+    ///             *last_refresh.write().await = Instant::now();
+    ///
+    ///             Ok(service)
     ///         }
     ///     }
     /// };
     ///
-    /// // Create initial service
-    /// let initial_token = jwt_provider.get_fresh_token().await?;
-    /// let transport = StreamableHttpClientTransport::from_uri("https://my-backend/mcp")
-    ///     .with_header("Authorization", format!("Bearer {}", initial_token));
-    /// let service = ().serve(transport).await?;
-    ///
-    /// let server = MCPServer::with_service_refresher("my-server", service, refresher);
+    /// let server = MCPServer::new("my-server", refresher);
     /// ```
-    pub fn with_service_refresher<F, Fut>(
-        id: impl Into<String>,
-        initial_service: RunningService<RoleClient, ()>,
-        refresher: F,
-    ) -> Self
+    pub fn new<F, Fut>(id: impl Into<String>, refresher: F) -> Self
     where
         F: Fn() -> Fut + Send + Sync + 'static,
         Fut: Future<Output = Result<Option<RunningService<RoleClient, ()>>>> + Send + 'static,
     {
         let id = id.into();
-        tracing::info!("[MCPServer] Created MCP server '{}' with service refresher", id);
+        tracing::debug!("[MCPServer] Created MCP server '{}'", id);
 
         Self {
             id,
-            uri: None,
-            service: Arc::new(RwLock::new(Some(initial_service))),
-            refresher: Some(Arc::new(service_refresher(refresher))),
+            service: Arc::new(RwLock::new(None)),
+            refresher: Arc::new(service_refresher(refresher)),
         }
-    }
-
-    /// Create a new MCP server and connect to it using a simple URI
-    ///
-    /// This is a convenience method for simple cases. For more control (auth, custom headers),
-    /// use `from_service()` or `with_service_refresher()` instead.
-    pub async fn new(config: MCPServerConfig) -> Result<Self> {
-        let id = config.id.clone();
-        let uri = config.uri.clone();
-
-        tracing::info!("[MCPServer] Connecting to '{}' at {}", id, uri);
-
-        let service = Self::create_service(&uri).await?;
-
-        Ok(Self {
-            id,
-            uri: Some(uri),
-            service: Arc::new(RwLock::new(Some(service))),
-            refresher: None,
-        })
-    }
-
-    /// Create an rmcp service connection
-    async fn create_service(uri: &str) -> Result<RunningService<RoleClient, ()>> {
-        let transport_config = StreamableHttpClientTransportConfig::with_uri(uri);
-        let transport: HttpClientTransport = HttpClientTransport::from_config(transport_config);
-
-        // Serve the transport to create a service
-        let service = ().serve(transport).await?;
-
-        Ok(service)
     }
 
     /// Get the server ID
     pub fn id(&self) -> &str {
         &self.id
-    }
-
-    /// Get the server URI (if available)
-    pub fn uri(&self) -> Option<&str> {
-        self.uri.as_deref()
     }
 
     /// Check if the server is connected
@@ -238,91 +176,286 @@ impl MCPServer {
     ///
     /// This is called before every operation (list_tools, call_tool).
     async fn ensure_service_valid(&self) -> Result<()> {
-        // If we have a refresher, call it to check if we need a new service
-        if let Some(ref refresher) = self.refresher {
-            tracing::debug!("[MCPServer] Checking if service needs refresh for '{}'", self.id);
+        tracing::debug!("[MCPServer] Checking if service needs refresh for '{}'", self.id);
 
-            match refresher.refresh().await {
-                Ok(Some(new_service)) => {
-                    // Refresher returned a new service, replace the old one
-                    tracing::info!("[MCPServer] Refreshing service for '{}'", self.id);
-                    let mut service_guard = self.service.write().await;
-                    *service_guard = Some(new_service);
-                    tracing::info!("[MCPServer] Service refreshed successfully for '{}'", self.id);
-                }
-                Ok(None) => {
-                    // No refresh needed, service is still valid
-                    tracing::trace!("[MCPServer] Service still valid for '{}'", self.id);
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "[MCPServer] Service refresh failed for '{}': {}",
-                        self.id,
-                        e
-                    );
-                    // Don't fail the operation, try to use existing service
-                    // The operation itself will fail if the service is truly invalid
-                }
+        match self.refresher.refresh().await {
+            Ok(Some(new_service)) => {
+                // Refresher returned a new service, replace the current one
+                tracing::debug!("[MCPServer] Got new service from refresher for '{}'", self.id);
+                let mut service_guard = self.service.write().await;
+                *service_guard = Some(new_service);
+            }
+            Ok(None) => {
+                // Refresher said no refresh needed, keep current service
+                tracing::debug!("[MCPServer] Refresher said no refresh needed for '{}'", self.id);
+            }
+            Err(e) => {
+                tracing::warn!(
+                    "[MCPServer] Service refresh failed for '{}': {}",
+                    self.id,
+                    e
+                );
+                return Err(e);
             }
         }
 
         Ok(())
     }
 
-    /// Reconnect to the server
+    /// List all tools available on this server
     ///
-    /// Only works for servers created with `new()` that have a URI.
-    /// Servers created with `from_service()` cannot be reconnected automatically.
-    pub async fn reconnect(&self) -> Result<()> {
-        let uri = self.uri.as_ref()
-            .ok_or_else(|| anyhow!("Cannot reconnect server '{}': no URI available (created from external service)", self.id))?;
-
-        tracing::info!("[MCPServer] Reconnecting to '{}'", self.id);
-
-        let mut service_guard = self.service.write().await;
-
-        // Drop old connection
-        *service_guard = None;
-
-        // Create new connection
-        let service = Self::create_service(uri).await?;
-        *service_guard = Some(service);
-
-        tracing::info!("[MCPServer] Successfully reconnected to '{}'", self.id);
-        Ok(())
+    /// This method includes automatic retry logic with reconnection.
+    /// If the connection is dead, it will attempt to refresh the service and retry.
+    pub async fn list_tools(&self) -> Result<Vec<Tool>> {
+        self.list_tools_with_retry(2).await
     }
 
-    /// List all tools available on this server
-    pub async fn list_tools(&self) -> Result<Vec<Tool>> {
-        // Ensure service is valid (refreshes if needed)
-        self.ensure_service_valid().await?;
-
-        let service_guard = self.service.read().await;
-        let service = service_guard
-            .as_ref()
-            .ok_or_else(|| anyhow!("MCP server '{}' is not connected", self.id))?;
-
-        tracing::debug!("[MCPServer] Listing tools from '{}'", self.id);
-
-        let result: ListToolsResult = service.list_tools(Default::default()).await?;
+    /// Internal: List tools with retry logic
+    async fn list_tools_with_retry(&self, max_retries: u32) -> Result<Vec<Tool>> {
+        let mut attempts = 0;
+        let mut last_error = None;
 
         tracing::info!(
-            "[MCPServer] Got {} tools from '{}'",
-            result.tools.len(),
-            self.id
+            "[MCPServer] Starting list_tools for '{}' (will attempt {} times)",
+            self.id,
+            max_retries + 1
         );
 
-        Ok(result.tools)
+        while attempts <= max_retries {
+            tracing::info!(
+                "[MCPServer] list_tools attempt {}/{} for '{}'",
+                attempts + 1,
+                max_retries + 1,
+                self.id
+            );
+
+            // Ensure service is valid (refreshes if needed)
+            if let Err(e) = self.ensure_service_valid().await {
+                tracing::warn!(
+                    "[MCPServer] ensure_service_valid failed for '{}': {}",
+                    self.id,
+                    e
+                );
+                last_error = Some(e);
+                attempts += 1;
+                continue;
+            }
+
+            let service_guard = self.service.read().await;
+            let service = match service_guard.as_ref() {
+                Some(s) => {
+                    tracing::debug!("[MCPServer] Service is available for '{}'", self.id);
+                    s
+                }
+                None => {
+                    tracing::warn!("[MCPServer] Service is None for '{}'", self.id);
+                    last_error = Some(anyhow!("MCP server '{}' is not connected", self.id));
+                    attempts += 1;
+                    drop(service_guard);
+                    continue;
+                }
+            };
+
+            // Very short timeout - this is a quick health check
+            let timeout_duration = std::time::Duration::from_secs(5);
+            tracing::info!(
+                "[MCPServer] Calling list_tools on '{}' with {}s timeout...",
+                self.id,
+                timeout_duration.as_secs()
+            );
+
+            let list_future = service.list_tools(Default::default());
+
+            match tokio::time::timeout(timeout_duration, list_future).await {
+                Ok(Ok(result)) => {
+                    tracing::debug!(
+                        "[MCPServer] list_tools SUCCESS for '{}' - got {} tools",
+                        self.id,
+                        result.tools.len()
+                    );
+                    return Ok(result.tools);
+                }
+                Ok(Err(e)) => {
+                    tracing::warn!(
+                        "[MCPServer] list_tools FAILED for '{}': {}",
+                        self.id,
+                        e
+                    );
+                    last_error = Some(e.into());
+
+                    // Drop the read lock before attempting to reconnect
+                    drop(service_guard);
+
+                    // Connection might be dead, try to force refresh on next attempt
+                    if attempts < max_retries {
+                        tracing::info!(
+                            "[MCPServer] Will attempt FORCED RECONNECTION for '{}' before retry",
+                            self.id
+                        );
+
+                        // Drop old service to force refresher to create a new one
+                        {
+                            let mut write_guard = self.service.write().await;
+                            *write_guard = None;
+                            tracing::debug!("[MCPServer] Dropped old service for '{}'", self.id);
+                        }
+
+                        // Force service refresh by calling refresher
+                        tracing::info!(
+                            "[MCPServer] Calling refresher callback for '{}' to FORCE reconnect...",
+                            self.id
+                        );
+                        match self.refresher.refresh().await {
+                            Ok(Some(new_service)) => {
+                                tracing::info!(
+                                    "[MCPServer] Refresher provided new service for '{}'",
+                                    self.id
+                                );
+                                let mut write_guard = self.service.write().await;
+                                *write_guard = Some(new_service);
+                                tracing::info!(
+                                    "[MCPServer] New service installed for '{}'",
+                                    self.id
+                                );
+                            }
+                            Ok(None) => {
+                                tracing::warn!(
+                                    "[MCPServer] Refresher returned None after forced reconnect for '{}'",
+                                    self.id
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "[MCPServer] Refresher FAILED for '{}': {}",
+                                    self.id,
+                                    e
+                                );
+                            }
+                        }
+                    }
+
+                    attempts += 1;
+                }
+                Err(_) => {
+                    tracing::error!(
+                        "[MCPServer] TIMEOUT listing tools from '{}' after {}s",
+                        self.id,
+                        timeout_duration.as_secs()
+                    );
+                    last_error = Some(anyhow!(
+                        "Timeout listing tools from '{}' after {}s",
+                        self.id,
+                        timeout_duration.as_secs()
+                    ));
+
+                    // Drop lock and try to reconnect
+                    drop(service_guard);
+
+                    if attempts < max_retries {
+                        tracing::info!(
+                            "[MCPServer] Will attempt FORCED RECONNECTION for '{}' after timeout",
+                            self.id
+                        );
+
+                        // Drop old service to force refresher to create a new one
+                        {
+                            let mut write_guard = self.service.write().await;
+                            *write_guard = None;
+                            tracing::debug!("[MCPServer] Dropped old service for '{}'", self.id);
+                        }
+
+                        tracing::info!(
+                            "[MCPServer] Calling refresher callback for '{}' to FORCE reconnect...",
+                            self.id
+                        );
+                        match self.refresher.refresh().await {
+                            Ok(Some(new_service)) => {
+                                tracing::info!(
+                                    "[MCPServer] Refresher provided new service for '{}'",
+                                    self.id
+                                );
+                                let mut write_guard = self.service.write().await;
+                                *write_guard = Some(new_service);
+                                tracing::info!(
+                                    "[MCPServer] New service installed for '{}'",
+                                    self.id
+                                );
+                            }
+                            Ok(None) => {
+                                tracing::warn!(
+                                    "[MCPServer] Refresher returned None after timeout/forced reconnect for '{}'",
+                                    self.id
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "[MCPServer] Refresher FAILED for '{}': {}",
+                                    self.id,
+                                    e
+                                );
+                            }
+                        }
+                    }
+
+                    attempts += 1;
+                }
+            }
+        }
+
+        tracing::error!(
+            "[MCPServer] EXHAUSTED all {} attempts for list_tools on '{}'",
+            max_retries + 1,
+            self.id
+        );
+        Err(last_error.unwrap_or_else(|| {
+            anyhow!(
+                "Failed to list tools after {} attempts",
+                max_retries + 1
+            )
+        }))
     }
 
     /// Call a tool on this server
+    ///
+    /// This method first checks server connectivity by calling list_tools()
+    /// to ensure the server is alive before executing the actual tool call.
     pub async fn call_tool(
         &self,
         name: &str,
         arguments: Option<Map<String, Value>>,
     ) -> Result<CallToolResult> {
-        // Ensure service is valid (refreshes if needed)
-        self.ensure_service_valid().await?;
+        // Health check: call list_tools() to verify server is up
+        // This will automatically retry and reconnect if the server crashed
+        tracing::info!(
+            "[MCPServer] HEALTH CHECK before calling tool '{}' on '{}'",
+            name,
+            self.id
+        );
+
+        match self.list_tools().await {
+            Ok(_) => {
+                tracing::info!(
+                    "[MCPServer] HEALTH CHECK PASSED for '{}' - proceeding with tool call",
+                    self.id
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    "[MCPServer] HEALTH CHECK FAILED for '{}': {}",
+                    self.id,
+                    e
+                );
+                tracing::error!(
+                    "[MCPServer] Tool '{}' will NOT execute - server is unreachable",
+                    name
+                );
+                return Err(anyhow!(
+                    "Health check failed for MCP server '{}': {}",
+                    self.id,
+                    e
+                ));
+            }
+        }
 
         let service_guard = self.service.read().await;
         let service = service_guard
@@ -334,18 +467,56 @@ impl MCPServer {
             name,
             self.id
         );
-        tracing::debug!("[MCPServer] Arguments: {:?}", arguments);
+        tracing::debug!("[MCPServer] Tool arguments: {:?}", arguments);
 
-        let result = service
-            .call_tool(CallToolRequestParams {
-                meta: None,
-                name: name.to_string().into(),
-                arguments,
-                task: None,
-            })
-            .await?;
+        // Add timeout to tool call as well
+        let timeout_duration = std::time::Duration::from_secs(120); // 2 minutes for tool execution
+        tracing::info!(
+            "[MCPServer] Executing '{}' with {}s timeout...",
+            name,
+            timeout_duration.as_secs()
+        );
 
-        tracing::debug!("[MCPServer] Tool call completed for '{}'", name);
+        let call_future = service.call_tool(CallToolRequestParams {
+            meta: None,
+            name: name.to_string().into(),
+            arguments,
+            task: None,
+        });
+
+        let result = match tokio::time::timeout(timeout_duration, call_future).await {
+            Ok(Ok(result)) => {
+                tracing::info!(
+                    "[MCPServer] Tool '{}' executed successfully on '{}'",
+                    name,
+                    self.id
+                );
+                result
+            }
+            Ok(Err(e)) => {
+                tracing::error!(
+                    "[MCPServer] Tool '{}' FAILED on '{}': {}",
+                    name,
+                    self.id,
+                    e
+                );
+                return Err(e.into());
+            }
+            Err(_) => {
+                tracing::error!(
+                    "[MCPServer] TIMEOUT executing tool '{}' on '{}' after {}s",
+                    name,
+                    self.id,
+                    timeout_duration.as_secs()
+                );
+                return Err(anyhow!(
+                    "Timeout calling tool '{}' on '{}' after {}s",
+                    name,
+                    self.id,
+                    timeout_duration.as_secs()
+                ));
+            }
+        };
 
         Ok(result)
     }
@@ -364,9 +535,25 @@ mod tests {
     #[tokio::test]
     #[ignore] // Requires a running MCP server
     async fn test_mcp_server_connection() {
-        let config = MCPServerConfig::new("test-server", "http://localhost:8005/mcp");
+        use rmcp::transport::StreamableHttpClientTransport;
+        use rmcp::ServiceExt;
 
-        let server = MCPServer::new(config).await.unwrap();
+        let uri = "http://localhost:8005/mcp";
+
+        // Create a simple refresher that always creates a new service
+        let refresher = {
+            let uri = uri.to_string();
+            move || {
+                let uri = uri.clone();
+                async move {
+                    let transport = StreamableHttpClientTransport::from_uri(uri.as_str());
+                    let service = ().serve(transport).await?;
+                    Ok(Some(service))
+                }
+            }
+        };
+
+        let server = MCPServer::new("test-server", refresher);
         assert!(server.is_connected().await);
 
         let tools = server.list_tools().await.unwrap();

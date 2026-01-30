@@ -3,8 +3,9 @@
 //! Demonstrates MCP (Model Context Protocol) integration:
 //! - MCPServerManager for managing MCP connections
 //! - MCPToolProvider for exposing MCP tools
-//! - Custom transport configuration
-//! - Tool namespacing (server_id:tool_name)
+//! - Custom transport configuration with refresher
+//! - Tool namespacing (server_id__tool_name)
+//! - Automatic reconnection on connection failures
 //!
 //! Run with:
 //!   cargo run --example mcp_agent                     # New session
@@ -15,6 +16,8 @@
 use anyhow::{bail, Result};
 use std::env;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 
 use shadow_agent_sdk::{
     agent::{AgentConfig, StandardAgent},
@@ -87,18 +90,61 @@ async fn main() -> Result<()> {
     let runtime = AgentRuntime::new();
     println!("[Setup] Runtime created");
 
-    // --- Step 3: Set up MCP connection ---
+    // --- Step 3: Set up MCP connection with auto-reconnection ---
     println!("[Setup] Connecting to MCP server at http://localhost:8005/mcp...");
 
-    // Create transport and service
-    let transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp");
-    let service = ().serve(transport).await?;
-
-    // Create MCP manager and add the service
+    // Create MCP manager
     let mcp_manager = Arc::new(MCPServerManager::new());
-    mcp_manager.add_service("filesystem", service).await?;
 
-    println!("[Setup] Connected to MCP server 'filesystem'");
+    // Create a refresher with caching to handle reconnections
+    // The refresher caches the service for 5 minutes to avoid unnecessary reconnections,
+    // but will create a new service if the cached one becomes invalid or on forced reconnect
+    let uri = "http://localhost:8005/mcp";
+    let cached_service = Arc::new(RwLock::new(None));
+    let last_refresh = Arc::new(RwLock::new(Instant::now() - Duration::from_secs(999)));
+
+    let refresher = {
+        let uri = uri.to_string();
+        let cached = cached_service.clone();
+        let last_refresh = last_refresh.clone();
+
+        move || {
+            let uri = uri.clone();
+            let cached = cached.clone();
+            let last_refresh = last_refresh.clone();
+
+            async move {
+                // Check if cached service is still valid (less than 5 minutes old)
+                {
+                    let last = last_refresh.read().await;
+                    if last.elapsed() < Duration::from_secs(5 * 60) {
+                        let cached_guard = cached.read().await;
+                        if cached_guard.is_some() {
+                            return Ok(None); // No refresh needed
+                        }
+                    }
+                }
+
+                // Create new service
+                let transport = StreamableHttpClientTransport::from_uri(uri.as_str());
+                let service = ().serve(transport).await?;
+
+                // Cache it (for timestamp tracking)
+                *cached.write().await = Some(service);
+                *last_refresh.write().await = Instant::now();
+
+                // Take ownership from cache and return it
+                Ok(cached.write().await.take())
+            }
+        }
+    };
+
+    // Add the server with refresher (enables automatic reconnection)
+    mcp_manager
+        .add_server_with_refresher("filesystem", refresher)
+        .await?;
+
+    println!("[Setup] Connected to MCP server 'filesystem' with auto-reconnection");
 
     // --- Step 4: Create tool registry with MCP provider ---
     let mut tool_registry = ToolRegistry::new();

@@ -1063,6 +1063,15 @@ The refresher callback is called **before every MCP operation** (`list_tools`, `
 
 This pattern mirrors the LLM auth provider and gives you complete control over token refresh logic.
 
+**Automatic Reconnection**
+
+When an MCP server crashes or restarts, the framework automatically handles reconnection:
+1. Before every tool call, a health check (`list_tools`) verifies the server is alive (5-second timeout)
+2. If the health check fails, the old service is dropped
+3. The refresher is called to create a new service
+4. The operation is retried with the new connection (up to 3 attempts)
+5. All of this happens transparently - tools just work
+
 **Thread Safety**
 
 - Service is wrapped in `Arc<RwLock<...>>` for safe concurrent access
@@ -1272,12 +1281,13 @@ match mcp_manager.add_service("broken", service).await {
 
 #### Best Practices
 
-1. **Use service refresher for any auth that expires** - Don't rely on manual refresh
-2. **Cache tokens in your JWT provider** - Avoid unnecessary token refresh calls
-3. **Set refresh interval below expiry** - E.g., 50 minutes for 60-minute tokens
-4. **Handle refresh failures gracefully** - Return `Err(...)` to continue with existing service
-5. **Test with network interruptions** - Ensure reconnection works properly
-6. **Use descriptive server IDs** - They appear in tool names (`server_id__tool_name`)
+1. **Always use a service refresher** - The refresher is now mandatory for all MCP servers
+2. **Implement caching in your refresher** - Check timestamps before creating new services
+3. **Cache tokens in your JWT provider** - Avoid unnecessary token refresh calls
+4. **Set refresh interval below expiry** - E.g., 5 minutes for 10-minute tokens, 50 minutes for 60-minute tokens
+5. **Handle refresh failures gracefully** - Return `Err(...)` if refresh fails (framework continues with existing service)
+6. **Test with server restarts** - The framework automatically reconnects when servers crash
+7. **Use descriptive server IDs** - They appear in tool names (`server_id__tool_name`)
 
 #### Debugging
 
@@ -1288,11 +1298,20 @@ let config = AgentConfig::new("...")
     .with_debug(true);
 
 // Logs show:
-// - [MCPServer] Connecting to 'filesystem' at http://localhost:8005/mcp
-// - [MCPServer] Got 5 tools from 'filesystem'
-// - [MCPServer] Checking if service needs refresh for 'filesystem'
-// - [MCPServer] Service still valid for 'filesystem'
+// - [MCPServer] Created MCP server 'filesystem'
+// - [MCPServer] HEALTH CHECK before calling tool 'read_file' on 'filesystem'
+// - [MCPServer] ✓ HEALTH CHECK PASSED for 'filesystem' - proceeding with tool call
 // - [MCPServer] Calling tool 'read_file' on server 'filesystem'
+// - [MCPServer] ✓ Tool 'read_file' executed successfully on 'filesystem'
+
+// When server crashes and restarts:
+// - [MCPServer] ✗ list_tools FAILED for 'filesystem': connection error
+// - [MCPServer] Will attempt FORCED RECONNECTION for 'filesystem' before retry
+// - [MCPServer] Dropped old service for 'filesystem'
+// - [MCPServer] Calling refresher callback for 'filesystem' to FORCE reconnect...
+// - [MCPServer] ✓ Refresher provided new service for 'filesystem'
+// - [MCPServer] ✓ New service installed for 'filesystem'
+// - [MCPServer] ✓ list_tools SUCCESS for 'filesystem' - got 5 tools
 ```
 
 #### API Reference
@@ -1300,40 +1319,30 @@ let config = AgentConfig::new("...")
 **MCPServerManager**
 
 ```rust
-// Add service without refresh
-mcp_manager.add_service(id, service).await?;
+// Add server with refresher (refresher is mandatory)
+mcp_manager.add_server_with_refresher(id, refresher).await?;
 
-// Add service with refresh callback
-mcp_manager.add_service_with_refresher(id, service, refresher).await?;
-
-// Add from config (convenience for simple URIs)
+// Add from config (convenience - creates simple refresher with caching)
 mcp_manager.add_server(MCPServerConfig::new(id, uri)).await?;
 
 // Management
 mcp_manager.get_server(id).await;
 mcp_manager.server_ids().await;
 mcp_manager.server_count().await;
-mcp_manager.reconnect_server(id).await?;
+mcp_manager.reconnect_server(id).await?; // Note: reconnection is automatic on failures
 mcp_manager.health_check_all().await;
 ```
 
 **MCPServer**
 
 ```rust
-// Create from service (no refresh)
-let server = MCPServer::from_service(id, service);
+// Create with refresh callback (refresher is mandatory)
+let server = MCPServer::new(id, refresher);
 
-// Create with refresh callback
-let server = MCPServer::with_service_refresher(id, service, refresher);
-
-// Create from URI (convenience)
-let server = MCPServer::new(MCPServerConfig::new(id, uri)).await?;
-
-// Operations
-server.list_tools().await?;
-server.call_tool(name, arguments).await?;
-server.health_check().await?;
-server.reconnect().await?; // Only works with URI-based servers
+// Operations (automatic health checks and reconnection)
+server.list_tools().await?;        // Includes retry logic with reconnection
+server.call_tool(name, arguments).await?; // Health check + retry logic
+server.health_check().await?;      // Explicit health check
 ```
 
 **MCPToolProvider**

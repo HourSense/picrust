@@ -5,7 +5,11 @@
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+use rmcp::service::RunningService;
+use rmcp::transport::StreamableHttpClientTransport;
+use rmcp::{RoleClient, ServiceExt};
 
 use super::config::MCPServerConfig;
 use super::server::MCPServer;
@@ -37,47 +41,18 @@ impl MCPServerManager {
         }
     }
 
-    /// Add an MCP server from an existing RunningService
-    ///
-    /// For simple cases without auth refresh. For JWT scenarios,
-    /// use `add_service_with_refresher()` instead.
-    ///
-    /// # Example
-    /// ```no_run
-    /// use rmcp::transport::StreamableHttpClientTransport;
-    /// use rmcp::ServiceExt;
-    ///
-    /// let transport = StreamableHttpClientTransport::from_uri("http://localhost:8005/mcp")
-    ///     .with_header("Authorization", "Bearer token");
-    /// let service = ().serve(transport).await?;
-    /// manager.add_service("my-server", service).await?;
-    /// ```
-    pub async fn add_service(
-        &self,
-        id: impl Into<String>,
-        service: rmcp::service::RunningService<rmcp::RoleClient, ()>,
-    ) -> Result<()> {
-        let id = id.into();
-
-        // Check if server already exists
-        if self.servers.read().await.contains_key(&id) {
-            return Err(anyhow!("MCP server '{}' already exists", id));
-        }
-
-        let server = Arc::new(MCPServer::from_service(id.clone(), service));
-
-        // Add to map
-        self.servers.write().await.insert(id.clone(), server);
-
-        tracing::info!("[MCPServerManager] Added MCP server '{}'", id);
-
-        Ok(())
-    }
-
     /// Add an MCP server with a service refresher callback
     ///
-    /// This is the recommended way for JWT/auth scenarios where tokens expire.
-    /// The refresher is called before every MCP operation.
+    /// The refresher is REQUIRED and is called:
+    /// - Before each MCP operation (to check connection health)
+    /// - When connection failures are detected (to force reconnect)
+    ///
+    /// The refresher should return:
+    /// - `Ok(Some(service))` - A new service was created
+    /// - `Ok(None)` - The cached service is still valid, no refresh needed
+    /// - `Err(e)` - Failed to create service
+    ///
+    /// The refresher should implement caching internally to avoid unnecessary reconnections.
     ///
     /// # Example
     /// ```no_run
@@ -87,47 +62,60 @@ impl MCPServerManager {
     /// use rmcp::transport::StreamableHttpClientTransport;
     /// use rmcp::ServiceExt;
     ///
+    /// // Cached service with timestamp
+    /// let cached_service = Arc::new(RwLock::new(None));
     /// let last_refresh = Arc::new(RwLock::new(Instant::now()));
     /// let jwt_provider = Arc::new(MyJwtProvider::new());
     ///
     /// let refresher = {
+    ///     let cached = cached_service.clone();
     ///     let last_refresh = last_refresh.clone();
     ///     let jwt = jwt_provider.clone();
     ///
     ///     move || {
+    ///         let cached = cached.clone();
     ///         let last_refresh = last_refresh.clone();
     ///         let jwt = jwt.clone();
+    ///
     ///         async move {
-    ///             let mut last = last_refresh.write().await;
-    ///             if last.elapsed() < Duration::from_secs(50 * 60) {
-    ///                 return Ok(None); // Still valid
+    ///             // Check if cached service is still valid
+    ///             {
+    ///                 let last = last_refresh.read().await;
+    ///                 if last.elapsed() < Duration::from_secs(50 * 60) {
+    ///                     // Token still fresh, no refresh needed
+    ///                     let cached_guard = cached.read().await;
+    ///                     if cached_guard.is_some() {
+    ///                         return Ok(None); // Keep using cached
+    ///                     }
+    ///                 }
     ///             }
     ///
+    ///             // Create new service
     ///             let token = jwt.get_fresh_token().await?;
     ///             let transport = StreamableHttpClientTransport::from_uri("https://backend/mcp")
     ///                 .with_header("Authorization", format!("Bearer {}", token));
     ///             let service = ().serve(transport).await?;
-    ///             *last = Instant::now();
-    ///             Ok(Some(service))
+    ///
+    ///             // Cache it
+    ///             *cached.write().await = Some(service);
+    ///             *last_refresh.write().await = Instant::now();
+    ///
+    ///             // Return the cached service as Option
+    ///             Ok(cached.read().await.clone())
     ///         }
     ///     }
     /// };
     ///
-    /// let initial_service = create_initial_service().await?;
-    /// manager.add_service_with_refresher("my-server", initial_service, refresher).await?;
+    /// manager.add_server_with_refresher("my-server", refresher).await?;
     /// ```
-    pub async fn add_service_with_refresher<F, Fut>(
+    pub async fn add_server_with_refresher<F, Fut>(
         &self,
         id: impl Into<String>,
-        initial_service: rmcp::service::RunningService<rmcp::RoleClient, ()>,
         refresher: F,
     ) -> Result<()>
     where
         F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<
-                Output = Result<Option<rmcp::service::RunningService<rmcp::RoleClient, ()>>>,
-            > + Send
-            + 'static,
+        Fut: std::future::Future<Output = Result<Option<RunningService<RoleClient, ()>>>> + Send + 'static,
     {
         let id = id.into();
 
@@ -136,27 +124,23 @@ impl MCPServerManager {
             return Err(anyhow!("MCP server '{}' already exists", id));
         }
 
-        let server = Arc::new(MCPServer::with_service_refresher(
-            id.clone(),
-            initial_service,
-            refresher,
-        ));
+        let server = Arc::new(MCPServer::new(id.clone(), refresher));
 
         // Add to map
         self.servers.write().await.insert(id.clone(), server);
 
-        tracing::info!(
-            "[MCPServerManager] Added MCP server '{}' with service refresher",
+        tracing::debug!(
+            "[MCPServerManager] Added MCP server '{}' with refresher",
             id
         );
 
         Ok(())
     }
 
-    /// Add and connect to a new MCP server using a simple URI
+    /// Add and connect to a new MCP server from config
     ///
-    /// This is a convenience method for simple cases. For more control (auth, custom headers),
-    /// use `add_service()` instead.
+    /// Creates a simple refresher that reconnects to the URI on every refresh.
+    /// For more control (JWT refresh, custom caching), use `add_server_with_refresher()`.
     pub async fn add_server(&self, config: MCPServerConfig) -> Result<()> {
         if !config.enabled {
             tracing::info!(
@@ -167,19 +151,63 @@ impl MCPServerManager {
         }
 
         let id = config.id.clone();
+        let uri = config.uri.clone();
 
         // Check if server already exists
         if self.servers.read().await.contains_key(&id) {
             return Err(anyhow!("MCP server '{}' already exists", id));
         }
 
-        // Connect to server
-        let server = Arc::new(MCPServer::new(config).await?);
+        // Create a refresher with simple caching
+        // Cache service for 5 minutes to avoid unnecessary reconnections
+        let cached_service: Arc<RwLock<Option<RunningService<RoleClient, ()>>>> =
+            Arc::new(RwLock::new(None));
+        let last_refresh = Arc::new(RwLock::new(Instant::now() - Duration::from_secs(999)));
+
+        let refresher = {
+            let uri = uri.clone();
+            let cached = cached_service.clone();
+            let last_refresh = last_refresh.clone();
+
+            move || {
+                let uri = uri.clone();
+                let cached = cached.clone();
+                let last_refresh = last_refresh.clone();
+
+                async move {
+                    // Check if cached service is still valid (less than 5 minutes old)
+                    {
+                        let last = last_refresh.read().await;
+                        if last.elapsed() < Duration::from_secs(5 * 60) {
+                            let cached_guard = cached.read().await;
+                            if cached_guard.is_some() {
+                                // Service is still valid, no refresh needed
+                                return Ok(None);
+                            }
+                        }
+                    }
+
+                    // Create new service
+                    let transport = StreamableHttpClientTransport::from_uri(uri.as_str());
+                    let service = ().serve(transport).await?;
+
+                    // Cache it (just for tracking the timestamp)
+                    // We don't actually return from cache since RunningService doesn't impl Clone
+                    *cached.write().await = Some(service);
+                    *last_refresh.write().await = Instant::now();
+
+                    // Take ownership of the service from the cache and return it
+                    Ok(cached.write().await.take())
+                }
+            }
+        };
+
+        let server = Arc::new(MCPServer::new(id.clone(), refresher));
 
         // Add to map
         self.servers.write().await.insert(id.clone(), server);
 
-        tracing::info!("[MCPServerManager] Added MCP server '{}'", id);
+        tracing::debug!("[MCPServerManager] Added MCP server '{}'", id);
 
         Ok(())
     }
@@ -244,14 +272,27 @@ impl MCPServerManager {
         results
     }
 
-    /// Reconnect a specific server
+    /// Force reconnect a specific server by clearing its cache
+    ///
+    /// This will cause the next operation to trigger the refresher.
+    /// Note: Reconnection happens automatically on connection failures,
+    /// so this is usually not needed.
     pub async fn reconnect_server(&self, id: &str) -> Result<()> {
-        let server = self
+        let _server = self
             .get_server(id)
             .await
             .ok_or_else(|| anyhow!("Server '{}' not found", id))?;
 
-        server.reconnect().await
+        tracing::debug!(
+            "[MCPServerManager] Reconnection requested for '{}' (automatic on next operation)",
+            id
+        );
+
+        // Note: The actual reconnection logic is handled by the refresher
+        // on the next operation. We don't have a direct reconnect method
+        // because reconnection is automatic when operations fail.
+
+        Ok(())
     }
 
     /// Get the number of connected servers

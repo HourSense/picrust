@@ -37,6 +37,19 @@
 //!     HookResult::allow()
 //! })?;
 //!
+//! // Log all assistant responses
+//! hooks.add(HookEvent::PostAssistantResponse, |ctx| {
+//!     if let Some(ref content) = ctx.assistant_content {
+//!         let text_blocks = content.iter().filter(|b| matches!(b, ContentBlock::Text { .. })).count();
+//!         let tool_blocks = content.iter().filter(|b| matches!(b, ContentBlock::ToolUse { .. })).count();
+//!         tracing::info!(
+//!             "Assistant response: {} text blocks, {} tool calls, stop_reason: {:?}",
+//!             text_blocks, tool_blocks, ctx.stop_reason
+//!         );
+//!     }
+//!     HookResult::none()
+//! });
+//!
 //! // Use with agent config
 //! let config = AgentConfig::new("You are helpful")
 //!     .with_hooks(hooks);
@@ -50,6 +63,7 @@
 //! | `PostToolUse` | After tool succeeds | messages (for logging) |
 //! | `PostToolUseFailure` | After tool fails | messages (for logging) |
 //! | `UserPromptSubmit` | When user sends prompt | `user_prompt`, messages |
+//! | `PostAssistantResponse` | After assistant generates response | messages (for logging) |
 //!
 //! # HookResult
 //!

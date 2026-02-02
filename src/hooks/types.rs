@@ -10,7 +10,7 @@ use std::collections::HashMap;
 
 use serde_json::Value;
 
-use crate::llm::Message;
+use crate::llm::{ContentBlock, Message, StopReason};
 use crate::runtime::AgentInternals;
 use crate::tools::ToolResult;
 
@@ -25,6 +25,8 @@ pub enum HookEvent {
     PostToolUseFailure,
     /// When user submits a prompt
     UserPromptSubmit,
+    /// After assistant generates a response
+    PostAssistantResponse,
 }
 
 impl std::fmt::Display for HookEvent {
@@ -34,6 +36,7 @@ impl std::fmt::Display for HookEvent {
             HookEvent::PostToolUse => write!(f, "PostToolUse"),
             HookEvent::PostToolUseFailure => write!(f, "PostToolUseFailure"),
             HookEvent::UserPromptSubmit => write!(f, "UserPromptSubmit"),
+            HookEvent::PostAssistantResponse => write!(f, "PostAssistantResponse"),
         }
     }
 }
@@ -72,6 +75,13 @@ pub struct HookContext<'a> {
     // === User input (for UserPromptSubmit) ===
     /// User prompt - can be modified by hook
     pub user_prompt: Option<String>,
+
+    // === Assistant response (for PostAssistantResponse) ===
+    /// Assistant's response content blocks
+    pub assistant_content: Option<Vec<ContentBlock>>,
+
+    /// Stop reason for the assistant's response
+    pub stop_reason: Option<StopReason>,
 }
 
 impl<'a> HookContext<'a> {
@@ -91,6 +101,8 @@ impl<'a> HookContext<'a> {
             tool_result: None,
             error: None,
             user_prompt: None,
+            assistant_content: None,
+            stop_reason: None,
         }
     }
 
@@ -111,6 +123,8 @@ impl<'a> HookContext<'a> {
             tool_result: Some(result.clone()),
             error: None,
             user_prompt: None,
+            assistant_content: None,
+            stop_reason: None,
         }
     }
 
@@ -131,6 +145,8 @@ impl<'a> HookContext<'a> {
             tool_result: None,
             error: Some(error.to_string()),
             user_prompt: None,
+            assistant_content: None,
+            stop_reason: None,
         }
     }
 
@@ -145,6 +161,28 @@ impl<'a> HookContext<'a> {
             tool_result: None,
             error: None,
             user_prompt: Some(prompt.to_string()),
+            assistant_content: None,
+            stop_reason: None,
+        }
+    }
+
+    /// Create context for PostAssistantResponse hook
+    pub fn post_assistant_response(
+        internals: &'a mut AgentInternals,
+        content_blocks: &[ContentBlock],
+        stop_reason: Option<StopReason>,
+    ) -> Self {
+        Self {
+            event: HookEvent::PostAssistantResponse,
+            internals,
+            tool_name: None,
+            tool_input: None,
+            tool_use_id: None,
+            tool_result: None,
+            error: None,
+            user_prompt: None,
+            assistant_content: Some(content_blocks.to_vec()),
+            stop_reason,
         }
     }
 

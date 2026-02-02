@@ -371,7 +371,19 @@ impl StandardAgent {
                 .session
                 .write()
                 .await
-                .add_message(Message::assistant_with_blocks(content_blocks))?;
+                .add_message(Message::assistant_with_blocks(content_blocks.clone()))?;
+
+            // Run PostAssistantResponse hooks
+            if let Some(ref hooks) = self.config.hooks {
+                let mut ctx = HookContext::post_assistant_response(
+                    internals,
+                    &content_blocks,
+                    stop_reason.clone(),
+                );
+                let _result = hooks.run(&mut ctx);
+                // Hook can access/modify history via internals if needed
+                // Primarily used for logging and monitoring
+            }
 
             // Check if any tool was interrupted
             let has_interrupt = tool_results.iter().any(|(_, result)| {

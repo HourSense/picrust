@@ -214,6 +214,7 @@ impl AnthropicProvider {
         user_message: &str,
         conversation_history: &[Message],
         system_prompt: Option<&str>,
+        session_id: Option<&str>,
     ) -> Result<String> {
         tracing::info!("Sending message to Anthropic API");
         tracing::debug!("User message: {}", user_message);
@@ -239,7 +240,7 @@ impl AnthropicProvider {
             stream: None,
         };
 
-        let response = self.send_request(&request).await?;
+        let response = self.send_request(&request, session_id).await?;
         Ok(response.text())
     }
 
@@ -275,7 +276,7 @@ impl AnthropicProvider {
             stream: None,
         };
 
-        self.send_request(&request).await
+        self.send_request(&request, None).await
     }
 
     /// Send a request with tools and system prompt (with caching support)
@@ -289,6 +290,7 @@ impl AnthropicProvider {
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
         thinking: Option<ThinkingConfig>,
+        session_id: Option<&str>,
     ) -> Result<MessageResponse> {
         tracing::info!("Sending message with tools to Anthropic API");
         tracing::debug!("Messages count: {}", messages.len());
@@ -310,11 +312,11 @@ impl AnthropicProvider {
             stream: None,
         };
 
-        self.send_request(&request).await
+        self.send_request(&request, session_id).await
     }
 
     /// Send a raw request to the Anthropic API
-    async fn send_request(&self, request: &MessageRequest) -> Result<MessageResponse> {
+    async fn send_request(&self, request: &MessageRequest, session_id: Option<&str>) -> Result<MessageResponse> {
         tracing::debug!("Model: {}", request.model);
         tracing::debug!("Max tokens: {}", request.max_tokens);
 
@@ -327,13 +329,20 @@ impl AnthropicProvider {
             .context("Failed to serialize request")?;
         tracing::debug!("Request JSON: {}", request_json);
 
-        let response = self
+        let mut request_builder = self
             .client
             .post(api_url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &auth_config.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("anthropic-beta", "interleaved-thinking-2025-05-14")
+            .header("anthropic-beta", "interleaved-thinking-2025-05-14");
+
+        // Add agent-session-id header if session_id is provided
+        if let Some(sid) = session_id {
+            request_builder = request_builder.header("agent-session-id", sid);
+        }
+
+        let response = request_builder
             .body(request_json)
             .send()
             .await
@@ -412,7 +421,7 @@ impl AnthropicProvider {
             stream: Some(true),
         };
 
-        self.send_streaming_request(&request).await
+        self.send_streaming_request(&request, None).await
     }
 
     /// Stream a message with tools and get incremental responses
@@ -446,7 +455,7 @@ impl AnthropicProvider {
             stream: Some(true),
         };
 
-        self.send_streaming_request(&request).await
+        self.send_streaming_request(&request, None).await
     }
 
     /// Stream a message with tools and system prompt (with caching support)
@@ -460,6 +469,7 @@ impl AnthropicProvider {
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
         thinking: Option<ThinkingConfig>,
+        session_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         tracing::info!("Streaming message with tools from Anthropic API");
         tracing::debug!("Messages count: {}", messages.len());
@@ -481,13 +491,14 @@ impl AnthropicProvider {
             stream: Some(true),
         };
 
-        self.send_streaming_request(&request).await
+        self.send_streaming_request(&request, session_id).await
     }
 
     /// Send a streaming request to the Anthropic API
     async fn send_streaming_request(
         &self,
         request: &MessageRequest,
+        session_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         tracing::debug!("Model: {}", request.model);
         tracing::debug!("Max tokens: {}", request.max_tokens);
@@ -501,13 +512,20 @@ impl AnthropicProvider {
             serde_json::to_string(request).context("Failed to serialize request")?;
         tracing::debug!("Request JSON: {}", request_json);
 
-        let response = self
+        let mut request_builder = self
             .client
             .post(api_url)
             .header("Content-Type", "application/json")
             .header("x-api-key", &auth_config.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
-            .header("anthropic-beta", "interleaved-thinking-2025-05-14")
+            .header("anthropic-beta", "interleaved-thinking-2025-05-14");
+
+        // Add agent-session-id header if session_id is provided
+        if let Some(sid) = session_id {
+            request_builder = request_builder.header("X-Agent-Session-Id", sid);
+        }
+
+        let response = request_builder
             .body(request_json)
             .send()
             .await

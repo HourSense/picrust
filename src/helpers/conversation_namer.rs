@@ -70,7 +70,7 @@ impl ConversationNamer {
     /// Generate a conversation name from a list of messages
     ///
     /// Returns the generated name, or an error if the naming fails.
-    pub async fn generate_name(&self, messages: &[Message]) -> Result<String> {
+    pub async fn generate_name(&self, messages: &[Message], session_id: Option<&str>) -> Result<String> {
         if messages.is_empty() {
             anyhow::bail!("Cannot name an empty conversation");
         }
@@ -83,10 +83,14 @@ impl ConversationNamer {
             messages.len()
         );
 
+        let session_id = session_id
+            .map(|id| format!("conversation-namer-{}", id))
+            .unwrap_or_default();
+
         // Call the LLM to generate a name
         let response = self
             .llm
-            .send_message(&formatted, &[], Some(NAMING_SYSTEM_PROMPT))
+            .send_message(&formatted, &[], Some(NAMING_SYSTEM_PROMPT), Some(&session_id))
             .await?;
 
         // Clean up the response (remove any extra whitespace or quotes)
@@ -177,14 +181,15 @@ impl ConversationNamer {
 /// # Example
 ///
 /// ```ignore
-/// let name = generate_conversation_name(&llm, session.history()).await?;
+/// let name = generate_conversation_name(&llm, session.history(), Some(&session.id())).await?;
 /// session.set_conversation_name(&name)?;
 /// ```
 pub async fn generate_conversation_name(
     llm: &AnthropicProvider,
     messages: &[Message],
+    session_id: Option<&str>,
 ) -> Result<String> {
-    ConversationNamer::new(llm).generate_name(messages).await
+    ConversationNamer::new(llm).generate_name(messages, session_id).await
 }
 
 #[cfg(test)]

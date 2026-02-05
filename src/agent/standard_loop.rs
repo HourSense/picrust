@@ -172,7 +172,7 @@ impl StandardAgent {
             session.history().to_vec()
         };
 
-        match namer.generate_name(&history).await {
+        match namer.generate_name(&history, Some(&internals.session.read().await.session_id().to_string())).await {
             Ok(name) => {
                 tracing::info!("[StandardAgent] Generated conversation name: {}", name);
                 let mut session = internals.session.write().await;
@@ -580,6 +580,12 @@ impl StandardAgent {
         tools: Vec<crate::llm::ToolDefinition>,
         system: Option<SystemPrompt>,
     ) -> Result<(Vec<ContentBlock>, Option<StopReason>)> {
+        // Get session ID
+        let session_id = {
+            let session = internals.session.read().await;
+            session.session_id().to_string()
+        };
+
         let response = self
             .llm
             .send_with_tools_and_system(
@@ -588,6 +594,7 @@ impl StandardAgent {
                 tools,
                 None,
                 self.config.thinking.clone(),
+                Some(&session_id),
             )
             .await?;
 
@@ -626,6 +633,12 @@ impl StandardAgent {
         tools: Vec<crate::llm::ToolDefinition>,
         system: Option<SystemPrompt>,
     ) -> Result<(Vec<ContentBlock>, Option<StopReason>)> {
+        // Get session ID
+        let session_id = {
+            let session = internals.session.read().await;
+            session.session_id().to_string()
+        };
+
         let mut stream = self
             .llm
             .stream_with_tools_and_system(
@@ -634,6 +647,7 @@ impl StandardAgent {
                 tools,
                 None,
                 self.config.thinking.clone(),
+                Some(&session_id),
             )
             .await?;
 

@@ -110,25 +110,29 @@ impl StandardAgent {
                         }
                     }
 
+                    tracing::info!("[StandardAgent] Should process: {}", should_process);
+
                     // Process the user message (if not blocked by hook)
                     if should_process {
                         if let Err(e) = self.process_turn(&mut internals, &current_text).await {
                             tracing::error!("[StandardAgent] Error processing turn: {}", e);
                             internals.send_error(format!("Error: {}", e));
                         }
-
-                        // Auto-name conversation after first turn
-                        if self.config.auto_name_conversation && internals.context.current_turn == 0
-                        {
-                            let has_name = internals.session.read().await.has_conversation_name();
-                            if !has_name {
-                                self.generate_conversation_name(&mut internals).await;
-                            }
-                        }
                     }
-
                     // Signal turn complete
                     internals.send_done();
+
+                    if self.config.auto_name_conversation && internals.context.current_turn == 0
+                    {
+                        let session_id = {
+                            let session = internals.session.read().await;
+                            session.session_id().to_string()
+                        };
+                        let has_name = internals.session.read().await.has_conversation_name();
+                        if !has_name {
+                            self.generate_conversation_name(&mut internals, Some(&session_id)).await;
+                        }
+                    }
 
                     // Persist session if configured
                     if self.config.auto_save_session {
@@ -163,7 +167,7 @@ impl StandardAgent {
     }
 
     /// Generate a conversation name using the ConversationNamer helper
-    async fn generate_conversation_name(&self, internals: &mut AgentInternals) {
+    async fn generate_conversation_name(&self, internals: &mut AgentInternals, session_id: Option<&str>) {
         tracing::debug!("[StandardAgent] Generating conversation name...");
 
         let namer = ConversationNamer::new(&self.llm);
@@ -172,7 +176,7 @@ impl StandardAgent {
             session.history().to_vec()
         };
 
-        match namer.generate_name(&history, Some(&internals.session.read().await.session_id().to_string())).await {
+        match namer.generate_name(&history, session_id).await {
             Ok(name) => {
                 tracing::info!("[StandardAgent] Generated conversation name: {}", name);
                 let mut session = internals.session.write().await;

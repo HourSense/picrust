@@ -56,3 +56,7 @@ rmcp = { version = "0.14", features = ["client", "transport-streamable-http-clie
 [[example]]
 name = "mcp_agent"
 path = "examples/mcp_agent/main.rs"
+
+[[example]]
+name = "gemini_test_agent"
+path = "examples/gemini_test_agent/main.rs"

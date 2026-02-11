@@ -47,7 +47,7 @@ anyhow = "1.0"
 use std::sync::Arc;
 use shadow_agent_sdk::{
     agent::{AgentConfig, StandardAgent},
-    llm::AnthropicProvider,
+    llm::{AnthropicProvider, LlmProvider},
     runtime::AgentRuntime,
     session::AgentSession,
     tools::ToolRegistry,
@@ -55,8 +55,8 @@ use shadow_agent_sdk::{
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Create LLM provider (reads ANTHROPIC_API_KEY from env)
-    let llm = Arc::new(AnthropicProvider::from_env()?);
+    // 1. Create LLM provider (reads ANTHROPIC_API_KEY and ANTHROPIC_MODEL from env)
+    let llm: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
 
     // 2. Create runtime (manages all agents)
     let runtime = AgentRuntime::new();
@@ -161,7 +161,10 @@ async fn main() -> anyhow::Result<()> {
 | `ToolRegistry` | Manages available tools |
 | `PermissionManager` | Three-tier permission system |
 | `HookRegistry` | Intercept and modify agent behavior |
-| `AnthropicProvider` | LLM API client |
+| `LlmProvider` | Trait for pluggable LLM backends |
+| `AnthropicProvider` | Anthropic Claude API client |
+| `GeminiProvider` | Google Gemini API client |
+| `SwappableLlmProvider` | Runtime-swappable LLM provider |
 
 ### Agent States
 
@@ -1926,32 +1929,114 @@ hooks.add(HookEvent::PreToolUse, |ctx: &mut HookContext| {
 
 ### LLM Module
 
-Interface with Anthropic's Claude API.
+The SDK provides a pluggable LLM provider architecture, allowing you to use different LLM backends interchangeably.
+
+**Migration Note**: If you're upgrading from an older version, the main changes are:
+- `StandardAgent::new()` now takes `Arc<dyn LlmProvider>` instead of `Arc<AnthropicProvider>`
+- `AnthropicProvider::from_env()` now requires the `ANTHROPIC_MODEL` environment variable
+- Wrap your provider in `Arc<dyn LlmProvider>` for type compatibility
+- See `docs/MIGRATION_LLM_PROVIDER.md` for detailed migration guide
+
+#### LlmProvider Trait
+
+All providers implement the `LlmProvider` trait:
+
+```rust
+use shadow_agent_sdk::llm::{LlmProvider, AnthropicProvider, GeminiProvider};
+
+// Create providers
+let anthropic: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
+let gemini: Arc<dyn LlmProvider> = Arc::new(GeminiProvider::from_env()?);
+
+// Use with StandardAgent - both work the same way
+let agent = StandardAgent::new(config, anthropic);
+// or
+let agent = StandardAgent::new(config, gemini);
+```
 
 #### AnthropicProvider
 
 ```rust
 use shadow_agent_sdk::llm::AnthropicProvider;
 
-// From environment variable (ANTHROPIC_API_KEY)
+// From environment variables (ANTHROPIC_API_KEY, ANTHROPIC_MODEL)
 let llm = AnthropicProvider::from_env()?;
 
-// With explicit API key
-let llm = AnthropicProvider::new("sk-ant-...")?;
-
-// With custom model
-let llm = AnthropicProvider::from_env()?
-    .with_model("claude-sonnet-4-5-20250929");
+// With explicit API key and model
+let llm = AnthropicProvider::new("sk-ant-...")?
+    .with_model("claude-sonnet-4-5@20250929");
 
 // With custom max tokens
 let llm = AnthropicProvider::from_env()?
     .with_max_tokens(8192);
 
 // Wrap in Arc for sharing
-let llm = Arc::new(llm);
+let llm: Arc<dyn LlmProvider> = Arc::new(llm);
+```
 
-// Create a variant with a different model (shares auth)
-let haiku_llm = llm.with_model_override("claude-3-5-haiku-20241022");
+#### GeminiProvider
+
+```rust
+use shadow_agent_sdk::llm::GeminiProvider;
+
+// From environment variables (GEMINI_API_KEY, GEMINI_MODEL)
+let llm = GeminiProvider::from_env()?;
+
+// With explicit API key and model
+let llm = GeminiProvider::new("AIza...")?
+    .with_model("gemini-3-flash-preview");
+
+// With custom max tokens
+let llm = GeminiProvider::from_env()?
+    .with_max_tokens(8192);
+
+// Wrap in Arc for sharing
+let llm: Arc<dyn LlmProvider> = Arc::new(llm);
+```
+
+**Note**: GeminiProvider translates between the framework's internal message format (Anthropic-style) and Gemini's API format internally. From the agent's perspective, both providers work identically.
+
+**Session Tracking**: The framework automatically tracks which model and provider are being used for each session in the session metadata (`model` and `provider` fields). This is especially useful when using `SwappableLlmProvider`, as the session metadata will reflect the currently active provider.
+
+#### Creating Lightweight Variants
+
+All providers support creating lightweight variants for specific tasks (like conversation naming):
+
+```rust
+// Create main provider
+let main_llm: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
+
+// Create a Haiku variant for fast, cheap naming (shares auth config)
+let naming_llm = main_llm.create_variant("claude-3-5-haiku-20241022", 1024);
+
+// Use separate models for agent and naming
+let config = AgentConfig::new("You are helpful")
+    .with_naming_llm(naming_llm);
+
+let agent = StandardAgent::new(config, main_llm);
+```
+
+#### SwappableLlmProvider
+
+For runtime model switching (e.g., fast/pro toggle in UI):
+
+```rust
+use shadow_agent_sdk::llm::{SwappableLlmProvider, GeminiProvider, LlmProvider};
+
+// Create initial provider
+let fast = Arc::new(GeminiProvider::new("key")?.with_model("gemini-3-flash-preview"));
+let swappable = SwappableLlmProvider::new(fast);
+
+// Get a handle for external switching
+let handle = swappable.handle();
+
+// Use with agent (agent sees Arc<dyn LlmProvider>)
+let llm: Arc<dyn LlmProvider> = Arc::new(swappable);
+let agent = StandardAgent::new(config, llm);
+
+// Later, switch to pro model (from UI handler, etc.)
+let pro = Arc::new(GeminiProvider::new("key")?.with_model("gemini-3-pro-preview"));
+handle.set_provider(pro).await;
 ```
 
 #### Dynamic Authentication
@@ -1975,10 +2060,17 @@ impl AuthProvider for MyAuthProvider {
     }
 }
 
-let llm = AnthropicProvider::with_auth_provider(MyAuthProvider { ... })?;
+let llm = AnthropicProvider::with_auth_provider_boxed(Arc::new(MyAuthProvider { ... }));
+// Or use the callback-based version:
+let llm = AnthropicProvider::with_auth_provider(|| async {
+    let token = refresh_jwt_token().await?;
+    Ok(AuthConfig::new(token))
+});
 ```
 
 #### Extended Thinking
+
+Extended thinking is currently supported by AnthropicProvider using Claude's extended thinking API.
 
 ```rust
 use shadow_agent_sdk::llm::ThinkingConfig;
@@ -2107,27 +2199,37 @@ let config = AgentConfig::new("...")
     .with_auto_name(false);  // Disable automatic naming
 ```
 
+By default, the agent uses the same LLM for naming. You can configure a separate lightweight model for naming:
+
+```rust
+// Use a faster/cheaper model for naming
+let naming_llm = llm.create_variant("claude-3-5-haiku-20241022", 1024);
+
+let config = AgentConfig::new("You are a helpful assistant")
+    .with_naming_llm(naming_llm);
+```
+
 You can also use the helper manually:
 
 ```rust
 use shadow_agent_sdk::helpers::{ConversationNamer, generate_conversation_name};
 
 // Using the helper struct
-let namer = ConversationNamer::new(&llm);
-let name = namer.generate_name(session.history()).await?;
+let namer = ConversationNamer::new(naming_llm);
+let name = namer.generate_name(session.history(), Some(&session_id)).await?;
 session.set_conversation_name(&name)?;
 
 // Or using the convenience function
-let name = generate_conversation_name(&llm, session.history()).await?;
+let name = generate_conversation_name(naming_llm, session.history(), Some(&session_id)).await?;
 session.set_conversation_name(&name)?;
 ```
 
 The namer:
-- Uses Claude Haiku for fast, cheap naming
+- Can use any LlmProvider (Anthropic, Gemini, etc.)
 - Generates 3-7 word descriptive names
 - Analyzes the conversation content including tool usage
-- Reuses the same auth configuration as your main LLM
 - Automatically integrated into StandardAgent after first turn
+- Uses the main agent LLM if no separate naming LLM is configured
 
 ---
 
@@ -2168,16 +2270,21 @@ The namer:
 ```rust
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use shadow_agent_sdk::llm::{AnthropicProvider, LlmProvider};
 
 pub struct AppState {
     pub runtime: AgentRuntime,
-    pub llm: Arc<AnthropicProvider>,
+    pub llm: Arc<dyn LlmProvider>,
     pub tools: Arc<ToolRegistry>,
 }
 
 impl AppState {
     pub fn new() -> anyhow::Result<Self> {
-        let llm = Arc::new(AnthropicProvider::from_env()?);
+        // Create LLM provider (reads from ANTHROPIC_API_KEY and ANTHROPIC_MODEL env vars)
+        let llm: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
+
+        // Or use Gemini:
+        // let llm: Arc<dyn LlmProvider> = Arc::new(GeminiProvider::from_env()?);
 
         let mut tools = ToolRegistry::new();
         tools.register(ReadTool::new()?);
@@ -2371,6 +2478,18 @@ Basic agent with common tools:
 cargo run --example test_agent
 ```
 
+### Gemini Test Agent (`examples/gemini_test_agent/`)
+
+Demonstrates using GeminiProvider:
+
+```bash
+# Set environment variables
+export GEMINI_API_KEY="your-key"
+export GEMINI_MODEL="gemini-3-flash-preview"
+
+cargo run --example gemini_test_agent
+```
+
 ### Integration Test (`examples/integration_test/`)
 
 Demonstrates subagent spawning:
@@ -2435,6 +2554,7 @@ cargo run --example session_browser
 | `with_auto_save(bool)` | Auto-save session |
 | `with_injection_chain(chain)` | Set context injections |
 | `with_auto_name(bool)` | Auto-name conversations (default: true) |
+| `with_naming_llm(Arc<dyn LlmProvider>)` | Set separate LLM for naming (optional) |
 | `with_prompt_caching(bool)` | Enable/disable prompt caching (default: true) |
 
 ### AgentHandle Methods
@@ -2475,9 +2595,27 @@ cargo run --example session_browser
 
 ## Environment Variables
 
+### Anthropic Provider
+
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ANTHROPIC_API_KEY` | API key for Anthropic | Required |
+| `ANTHROPIC_MODEL` | Model to use (e.g., `claude-sonnet-4-5@20250929`) | Required |
+| `ANTHROPIC_BASE_URL` | Custom API base URL (for proxies) | `https://api.anthropic.com/v1/messages` |
+| `ANTHROPIC_MAX_TOKENS` | Maximum tokens per response | `32000` |
+
+### Gemini Provider
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | API key for Google Gemini | Required |
+| `GEMINI_MODEL` | Model to use (e.g., `gemini-3-flash-preview`) | Required |
+| `GEMINI_MAX_TOKENS` | Maximum tokens per response | `8192` |
+
+### General
+
+| Variable | Description | Default |
+|----------|-------------|---------|
 | `RUST_LOG` | Log level (debug, info, warn, error) | info |
 
 ---

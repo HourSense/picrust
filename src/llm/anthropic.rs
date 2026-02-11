@@ -33,6 +33,7 @@ use tokio::io::AsyncBufReadExt;
 use tokio_util::io::StreamReader;
 
 use super::auth::{auth_provider, AuthConfig, AuthProvider, AuthSource};
+use super::provider::LlmProvider;
 use super::types::{
     Message, MessageRequest, MessageResponse, RawStreamEvent, StreamEvent, SystemPrompt,
     ThinkingConfig, ToolChoice, ToolDefinition,
@@ -59,8 +60,8 @@ impl AnthropicProvider {
     ///
     /// Reads from:
     /// - `ANTHROPIC_API_KEY` (required)
+    /// - `ANTHROPIC_MODEL` (required)
     /// - `ANTHROPIC_BASE_URL` (optional, defaults to Anthropic API)
-    /// - `ANTHROPIC_MODEL` (optional, defaults to claude-sonnet-4-5-20250929)
     /// - `ANTHROPIC_MAX_TOKENS` (optional, defaults to 32000)
     pub fn from_env() -> Result<Self> {
         tracing::info!("Creating Anthropic provider from environment");
@@ -71,7 +72,7 @@ impl AnthropicProvider {
         let base_url = env::var("ANTHROPIC_BASE_URL").ok();
 
         let model = env::var("ANTHROPIC_MODEL")
-            .unwrap_or_else(|_| "claude-sonnet-4-5-20250929".to_string());
+            .context("ANTHROPIC_MODEL environment variable not set")?;
 
         let max_tokens = env::var("ANTHROPIC_MAX_TOKENS")
             .ok()
@@ -104,7 +105,7 @@ impl AnthropicProvider {
         Ok(Self {
             client,
             auth: AuthSource::Static(AuthConfig::new(api_key)),
-            model: "claude-sonnet-4-5-20250929".to_string(),
+            model: "".to_string(),
             max_tokens: 32000,
         })
     }
@@ -133,7 +134,7 @@ impl AnthropicProvider {
         Self {
             client: Client::new(),
             auth: AuthSource::Dynamic(Arc::new(auth_provider(provider))),
-            model: "claude-sonnet-4-5-20250929".to_string(),
+            model: "".to_string(),
             max_tokens: 32000,
         }
     }
@@ -145,7 +146,7 @@ impl AnthropicProvider {
         Self {
             client: Client::new(),
             auth: AuthSource::Dynamic(provider),
-            model: "claude-sonnet-4-5-20250929".to_string(),
+            model: "".to_string(),
             max_tokens: 32000,
         }
     }
@@ -602,6 +603,58 @@ fn parse_sse_event(event_type: &str, data: &str) -> Result<Option<StreamEvent>> 
             tracing::debug!("Unknown SSE event type: {}", event_type);
             Ok(None)
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl LlmProvider for AnthropicProvider {
+    async fn send_message(
+        &self,
+        user_message: &str,
+        conversation_history: &[Message],
+        system_prompt: Option<&str>,
+        session_id: Option<&str>,
+    ) -> Result<String> {
+        self.send_message(user_message, conversation_history, system_prompt, session_id)
+            .await
+    }
+
+    async fn send_with_tools_and_system(
+        &self,
+        messages: Vec<Message>,
+        system: Option<SystemPrompt>,
+        tools: Vec<ToolDefinition>,
+        tool_choice: Option<ToolChoice>,
+        thinking: Option<ThinkingConfig>,
+        session_id: Option<&str>,
+    ) -> Result<MessageResponse> {
+        self.send_with_tools_and_system(messages, system, tools, tool_choice, thinking, session_id)
+            .await
+    }
+
+    async fn stream_with_tools_and_system(
+        &self,
+        messages: Vec<Message>,
+        system: Option<SystemPrompt>,
+        tools: Vec<ToolDefinition>,
+        tool_choice: Option<ToolChoice>,
+        thinking: Option<ThinkingConfig>,
+        session_id: Option<&str>,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        self.stream_with_tools_and_system(messages, system, tools, tool_choice, thinking, session_id)
+            .await
+    }
+
+    fn model(&self) -> String {
+        self.model.clone()
+    }
+
+    fn provider_name(&self) -> &str {
+        "anthropic"
+    }
+
+    fn create_variant(&self, model: &str, max_tokens: u32) -> Arc<dyn LlmProvider> {
+        Arc::new(self.with_model_and_tokens_override(model, max_tokens))
     }
 }
 

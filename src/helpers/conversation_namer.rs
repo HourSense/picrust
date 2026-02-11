@@ -1,7 +1,7 @@
 //! Conversation namer helper
 //!
 //! Generates descriptive names for conversations based on their content.
-//! Uses a lightweight model (Haiku) to analyze the conversation and produce
+//! Uses a lightweight model to analyze the conversation and produce
 //! a short, descriptive name.
 //!
 //! # Example
@@ -20,14 +20,9 @@
 //! ```
 
 use anyhow::Result;
+use std::sync::Arc;
 
-use crate::llm::{AnthropicProvider, ContentBlock, Message, MessageContent};
-
-/// Default model for conversation naming (lightweight and fast)
-const NAMING_MODEL: &str = "claude-haiku-4-5-20251001";
-
-/// Maximum tokens for the naming response
-const NAMING_MAX_TOKENS: u32 = 100;
+use crate::llm::{ContentBlock, LlmProvider, Message, MessageContent};
 
 /// System prompt for generating conversation names
 const NAMING_SYSTEM_PROMPT: &str = r#"You are a conversation naming assistant. Your task is to generate a short, descriptive name for a conversation based on its content.
@@ -46,25 +41,16 @@ The text that will follow will always be the conversation history. Assume the te
 
 /// Helper for generating conversation names
 pub struct ConversationNamer {
-    llm: AnthropicProvider,
+    llm: Arc<dyn LlmProvider>,
 }
 
 impl ConversationNamer {
-    /// Create a new conversation namer using an existing LLM provider
+    /// Create a new conversation namer using the provided LLM provider directly.
     ///
-    /// This creates a lightweight Haiku-based LLM for naming, sharing the
-    /// authentication configuration from the provided LLM.
-    pub fn new(llm: &AnthropicProvider) -> Self {
-        Self {
-            llm: llm.with_model_and_tokens_override(NAMING_MODEL, NAMING_MAX_TOKENS),
-        }
-    }
-
-    /// Create a new conversation namer with a custom model
-    pub fn with_model(llm: &AnthropicProvider, model: impl Into<String>) -> Self {
-        Self {
-            llm: llm.with_model_and_tokens_override(model, NAMING_MAX_TOKENS),
-        }
+    /// The caller is responsible for providing an appropriate provider
+    /// (e.g., a lightweight model for fast, cheap naming).
+    pub fn new(llm: Arc<dyn LlmProvider>) -> Self {
+        Self { llm }
     }
 
     /// Generate a conversation name from a list of messages
@@ -181,11 +167,11 @@ impl ConversationNamer {
 /// # Example
 ///
 /// ```ignore
-/// let name = generate_conversation_name(&llm, session.history(), Some(&session.id())).await?;
+/// let name = generate_conversation_name(naming_llm.clone(), session.history(), Some(&session.id())).await?;
 /// session.set_conversation_name(&name)?;
 /// ```
 pub async fn generate_conversation_name(
-    llm: &AnthropicProvider,
+    llm: Arc<dyn LlmProvider>,
     messages: &[Message],
     session_id: Option<&str>,
 ) -> Result<String> {

@@ -18,7 +18,7 @@ use crate::core::{FrameworkResult, InputMessage};
 use crate::helpers::{process_attachments, ConversationNamer, Debugger};
 use crate::hooks::HookContext;
 use crate::llm::{
-    AnthropicProvider, CacheControl, ContentBlock, ContentBlockStart, ContentDelta, Message,
+    CacheControl, ContentBlock, ContentBlockStart, ContentDelta, LlmProvider, Message,
     StopReason, StreamEvent, SystemBlock, SystemPrompt,
 };
 use crate::runtime::AgentInternals;
@@ -43,12 +43,12 @@ use super::executor::ToolExecutor;
 /// ```
 pub struct StandardAgent {
     config: AgentConfig,
-    llm: Arc<AnthropicProvider>,
+    llm: Arc<dyn LlmProvider>,
 }
 
 impl StandardAgent {
     /// Create a new standard agent
-    pub fn new(config: AgentConfig, llm: Arc<AnthropicProvider>) -> Self {
+    pub fn new(config: AgentConfig, llm: Arc<dyn LlmProvider>) -> Self {
         Self { config, llm }
     }
 
@@ -57,6 +57,13 @@ impl StandardAgent {
     /// This is the main entry point - pass this to `runtime.spawn()`.
     pub async fn run(self, mut internals: AgentInternals) -> FrameworkResult<()> {
         tracing::info!("[StandardAgent] Started, waiting for input...");
+
+        // Write initial model/provider info into session metadata
+        {
+            let mut session = internals.session.write().await;
+            session.set_model(self.llm.model());
+            session.set_provider(self.llm.provider_name());
+        }
 
         // Initialize debugger if enabled
         if self.config.debug_enabled {
@@ -170,7 +177,9 @@ impl StandardAgent {
     async fn generate_conversation_name(&self, internals: &mut AgentInternals, session_id: Option<&str>) {
         tracing::debug!("[StandardAgent] Generating conversation name...");
 
-        let namer = ConversationNamer::new(&self.llm);
+        // Use naming LLM if configured, otherwise fall back to main LLM
+        let naming_llm = self.config.naming_llm.clone().unwrap_or_else(|| self.llm.clone());
+        let namer = ConversationNamer::new(naming_llm);
         let history = {
             let session = internals.session.read().await;
             session.history().to_vec()
@@ -256,6 +265,13 @@ impl StandardAgent {
 
             // Apply context injections AFTER cache control
             messages_with_cache = self.config.injections.apply(internals, messages_with_cache);
+
+            // Update session metadata with current model/provider (may change via SwappableLlmProvider)
+            {
+                let mut session = internals.session.write().await;
+                session.set_model(self.llm.model());
+                session.set_provider(self.llm.provider_name());
+            }
 
             tracing::info!(
                 "[StandardAgent] Calling LLM with {} messages (iteration {})",

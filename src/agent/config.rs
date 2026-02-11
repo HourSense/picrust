@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use crate::helpers::InjectionChain;
 use crate::hooks::HookRegistry;
-use crate::llm::ThinkingConfig;
+use crate::llm::{LlmProvider, ThinkingConfig};
 use crate::tools::ToolRegistry;
 
 /// Configuration for a StandardAgent
@@ -63,6 +63,11 @@ pub struct AgentConfig {
     /// - The last message block before each LLM call (caches conversation history)
     /// This significantly reduces costs and latency for multi-turn conversations.
     pub enable_prompt_caching: bool,
+
+    /// Optional LLM provider for conversation naming.
+    /// If set, this provider is used for auto-naming conversations (typically a
+    /// lightweight/fast model). If not set, the main agent LLM is used.
+    pub naming_llm: Option<Arc<dyn LlmProvider>>,
 }
 
 impl AgentConfig {
@@ -80,6 +85,7 @@ impl AgentConfig {
             hooks: None,
             auto_name_conversation: true,
             enable_prompt_caching: true,
+            naming_llm: None,
         }
     }
 
@@ -203,9 +209,21 @@ impl AgentConfig {
     ///
     /// When enabled (default), the agent will automatically generate a short,
     /// descriptive name for the conversation after the first turn completes.
-    /// Uses Claude Haiku for fast, cheap naming.
+    /// Uses the naming LLM if set (see [`with_naming_llm`](Self::with_naming_llm)),
+    /// otherwise uses the main agent LLM.
     pub fn with_auto_name(mut self, enabled: bool) -> Self {
         self.auto_name_conversation = enabled;
+        self
+    }
+
+    /// Set a separate LLM provider for conversation naming
+    ///
+    /// This allows using a lightweight/fast model for naming (e.g., Haiku or Flash)
+    /// while the main agent uses a more capable model.
+    ///
+    /// If not set, the main agent LLM is used for naming.
+    pub fn with_naming_llm(mut self, llm: Arc<dyn LlmProvider>) -> Self {
+        self.naming_llm = Some(llm);
         self
     }
 
@@ -253,6 +271,7 @@ impl std::fmt::Debug for AgentConfig {
             .field("hooks", &self.hooks.as_ref().map(|h| format!("{:?}", h)))
             .field("auto_name_conversation", &self.auto_name_conversation)
             .field("enable_prompt_caching", &self.enable_prompt_caching)
+            .field("naming_llm", &self.naming_llm.as_ref().map(|l| l.model()))
             .finish()
     }
 }

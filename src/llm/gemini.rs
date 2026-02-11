@@ -807,7 +807,7 @@ impl GeminiProvider {
     }
 
     /// Send a non-streaming request to the Gemini API
-    async fn send_gemini_request(&self, request: &GeminiRequest) -> Result<GeminiResponse> {
+    async fn send_gemini_request(&self, request: &GeminiRequest, session_id: Option<&str>) -> Result<GeminiResponse> {
         // Get auth credentials (static or from provider)
         let auth_config = self.auth.get_auth().await
             .context("Failed to get authentication credentials")?;
@@ -818,11 +818,18 @@ impl GeminiProvider {
             .context("Failed to serialize Gemini request")?;
         tracing::debug!("[Gemini] Request JSON: {}", request_json);
 
-        let response = self
+        let mut request_builder = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("x-goog-api-key", &auth_config.api_key)
+            .header("x-goog-api-key", &auth_config.api_key);
+
+        // Add agent-session-id header if session_id is provided
+        if let Some(sid) = session_id {
+            request_builder = request_builder.header("agent-session-id", sid);
+        }
+
+        let response = request_builder
             .body(request_json)
             .send()
             .await
@@ -852,6 +859,7 @@ impl GeminiProvider {
     async fn send_gemini_streaming_request(
         &self,
         request: &GeminiRequest,
+        session_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         // Get auth credentials (static or from provider)
         let auth_config = self.auth.get_auth().await
@@ -863,11 +871,18 @@ impl GeminiProvider {
             .context("Failed to serialize Gemini streaming request")?;
         tracing::debug!("[Gemini] Streaming request JSON: {}", request_json);
 
-        let response = self
+        let mut request_builder = self
             .client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("x-goog-api-key", &auth_config.api_key)
+            .header("x-goog-api-key", &auth_config.api_key);
+
+        // Add agent-session-id header if session_id is provided
+        if let Some(sid) = session_id {
+            request_builder = request_builder.header("X-Agent-Session-Id", sid);
+        }
+
+        let response = request_builder
             .body(request_json)
             .send()
             .await
@@ -1193,7 +1208,7 @@ impl LlmProvider for GeminiProvider {
         user_message: &str,
         conversation_history: &[Message],
         system_prompt: Option<&str>,
-        _session_id: Option<&str>,
+        session_id: Option<&str>,
     ) -> Result<String> {
         tracing::info!("[Gemini] Sending message");
 
@@ -1203,7 +1218,7 @@ impl LlmProvider for GeminiProvider {
         let system = system_prompt.map(|s| SystemPrompt::Text(s.to_string()));
         let request = self.build_request(&messages, &system, &[], &None, &None).await;
 
-        let gemini_response = self.send_gemini_request(&request).await?;
+        let gemini_response = self.send_gemini_request(&request, session_id).await?;
         let response = self.convert_response(gemini_response).await?;
 
         Ok(response.text())
@@ -1216,14 +1231,14 @@ impl LlmProvider for GeminiProvider {
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
         thinking: Option<ThinkingConfig>,
-        _session_id: Option<&str>,
+        session_id: Option<&str>,
     ) -> Result<MessageResponse> {
         tracing::info!("[Gemini] Sending message with tools");
         tracing::debug!("[Gemini] Messages count: {}", messages.len());
         tracing::debug!("[Gemini] Tools count: {}", tools.len());
 
         let request = self.build_request(&messages, &system, &tools, &tool_choice, &thinking).await;
-        let gemini_response = self.send_gemini_request(&request).await?;
+        let gemini_response = self.send_gemini_request(&request, session_id).await?;
         self.convert_response(gemini_response).await
     }
 
@@ -1234,14 +1249,14 @@ impl LlmProvider for GeminiProvider {
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
         thinking: Option<ThinkingConfig>,
-        _session_id: Option<&str>,
+        session_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         tracing::info!("[Gemini] Streaming message with tools");
         tracing::debug!("[Gemini] Messages count: {}", messages.len());
         tracing::debug!("[Gemini] Tools count: {}", tools.len());
 
         let request = self.build_request(&messages, &system, &tools, &tool_choice, &thinking).await;
-        self.send_gemini_streaming_request(&request).await
+        self.send_gemini_streaming_request(&request, session_id).await
     }
 
     fn model(&self) -> String {

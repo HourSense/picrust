@@ -1,0 +1,267 @@
+---
+title: 'API Reference'
+description: 'Complete API documentation for Shadow Agent SDK'
+---
+
+## Overview
+
+This section contains detailed API documentation for all public types, traits, and functions in the Shadow Agent SDK.
+
+## Core Components
+
+<CardGroup cols={2}>
+  <Card title="Agent" icon="robot">
+    The main agent struct and its methods
+  </Card>
+  <Card title="Tools" icon="wrench">
+    Tool trait and built-in implementations
+  </Card>
+  <Card title="MCP" icon="plug">
+    Model Context Protocol client and server
+  </Card>
+  <Card title="Types" icon="code">
+    Common types and structures
+  </Card>
+</CardGroup>
+
+## Agent API
+
+### Agent::new
+
+Create a new agent instance.
+
+```rust
+pub async fn new(api_key: &str) -> Result<Self>
+```
+
+**Parameters:**
+- `api_key`: Your LLM provider API key
+
+**Returns:**
+- `Result<Agent>`: The initialized agent or an error
+
+**Example:**
+```rust
+let agent = Agent::new("your-api-key").await?;
+```
+
+### Agent::with_config
+
+Create an agent with custom configuration.
+
+```rust
+pub async fn with_config(
+    api_key: &str,
+    config: AgentConfig
+) -> Result<Self>
+```
+
+**Parameters:**
+- `api_key`: Your LLM provider API key
+- `config`: Agent configuration options
+
+**Example:**
+```rust
+let config = AgentConfig {
+    model: "claude-3-5-sonnet-20241022",
+    max_tokens: 4096,
+    ..Default::default()
+};
+
+let agent = Agent::with_config("api-key", config).await?;
+```
+
+### Agent::execute
+
+Execute a task and get the response.
+
+```rust
+pub async fn execute(&self, prompt: &str) -> Result<String>
+```
+
+**Parameters:**
+- `prompt`: The task description or question
+
+**Returns:**
+- `Result<String>`: The agent's response
+
+**Example:**
+```rust
+let response = agent.execute("What is Rust?").await?;
+println!("{}", response);
+```
+
+### Agent::execute_stream
+
+Execute a task and stream the response.
+
+```rust
+pub async fn execute_stream(
+    &self,
+    prompt: &str
+) -> Result<impl Stream<Item = String>>
+```
+
+**Parameters:**
+- `prompt`: The task description
+
+**Returns:**
+- `Result<Stream>`: A stream of response chunks
+
+**Example:**
+```rust
+let mut stream = agent.execute_stream("Write a story").await?;
+
+while let Some(chunk) = stream.next().await {
+    print!("{}", chunk);
+}
+```
+
+### Agent::add_tool
+
+Register a tool with the agent.
+
+```rust
+pub fn add_tool<T: Tool + 'static>(&mut self, tool: T)
+```
+
+**Parameters:**
+- `tool`: The tool instance to register
+
+**Example:**
+```rust
+use shadow_agent_sdk::tools::ReadFile;
+
+agent.add_tool(ReadFile::new());
+```
+
+### Agent::add_mcp_client
+
+Add an MCP client to the agent.
+
+```rust
+pub fn add_mcp_client(&mut self, client: MCPClient)
+```
+
+**Parameters:**
+- `client`: The MCP client instance
+
+**Example:**
+```rust
+let mcp = MCPClient::connect("http://localhost:3000").await?;
+agent.add_mcp_client(mcp);
+```
+
+## AgentConfig
+
+Configuration options for agent behavior.
+
+```rust
+pub struct AgentConfig {
+    pub model: String,
+    pub max_tokens: usize,
+    pub temperature: f32,
+    pub system_prompt: Option<String>,
+}
+```
+
+**Fields:**
+- `model`: LLM model identifier
+- `max_tokens`: Maximum response length
+- `temperature`: Randomness (0.0 - 1.0)
+- `system_prompt`: Optional system instructions
+
+**Example:**
+```rust
+let config = AgentConfig {
+    model: "claude-3-opus-20240229".to_string(),
+    max_tokens: 8192,
+    temperature: 0.5,
+    system_prompt: Some("You are a code reviewer".to_string()),
+};
+```
+
+## Tool Trait
+
+Implement this trait to create custom tools.
+
+```rust
+#[async_trait]
+pub trait Tool: Send + Sync {
+    fn name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn parameters(&self) -> serde_json::Value;
+    async fn execute(&self, params: serde_json::Value) -> ToolResult;
+}
+```
+
+**Methods:**
+- `name()`: Return the tool's identifier
+- `description()`: Describe what the tool does
+- `parameters()`: JSON schema for parameters
+- `execute()`: Implement tool logic
+
+**Example:**
+```rust
+use shadow_agent_sdk::Tool;
+use async_trait::async_trait;
+
+pub struct MyTool;
+
+#[async_trait]
+impl Tool for MyTool {
+    fn name(&self) -> &str {
+        "my_tool"
+    }
+
+    fn description(&self) -> &str {
+        "Does something useful"
+    }
+
+    fn parameters(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "input": {"type": "string"}
+            }
+        })
+    }
+
+    async fn execute(&self, params: serde_json::Value) -> ToolResult {
+        // Implementation
+        Ok("Result".to_string())
+    }
+}
+```
+
+## Error Types
+
+All errors implement `std::error::Error`.
+
+```rust
+pub enum AgentError {
+    ApiError(String),
+    ToolError(String),
+    ConfigError(String),
+    NetworkError(String),
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Examples"
+    icon="code"
+    href="https://github.com/yourusername/shadow-agent-framework/tree/main/examples"
+  >
+    View code examples
+  </Card>
+  <Card
+    title="GitHub"
+    icon="github"
+    href="https://github.com/yourusername/shadow-agent-framework"
+  >
+    Contribute to the project
+  </Card>
+</CardGroup>

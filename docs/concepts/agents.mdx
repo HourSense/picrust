@@ -1,0 +1,170 @@
+---
+title: 'Agents'
+description: 'Understanding the agent architecture in Shadow Agent SDK'
+---
+
+## What is an Agent?
+
+An agent is an autonomous entity that can understand natural language instructions, make decisions, and use tools to accomplish tasks. In Shadow Agent SDK, agents are the core building blocks of your agentic applications.
+
+## Agent Lifecycle
+
+<Steps>
+  <Step title="Initialization">
+    Create an agent instance with your LLM provider configuration:
+    ```rust
+    let agent = Agent::new("api-key").await?;
+    ```
+  </Step>
+
+  <Step title="Tool Registration">
+    Add tools that the agent can use:
+    ```rust
+    agent.add_tool(ReadFile::new());
+    agent.add_tool(BashExecutor::new());
+    ```
+  </Step>
+
+  <Step title="Execution">
+    Execute tasks and get responses:
+    ```rust
+    let response = agent.execute("Analyze this file").await?;
+    ```
+  </Step>
+
+  <Step title="Cleanup">
+    Resources are automatically cleaned up when the agent is dropped.
+  </Step>
+</Steps>
+
+## Agent Configuration
+
+Configure agent behavior with various options:
+
+```rust
+use shadow_agent_sdk::{Agent, AgentConfig};
+
+let config = AgentConfig {
+    model: "claude-3-5-sonnet-20241022",
+    max_tokens: 4096,
+    temperature: 0.7,
+    ..Default::default()
+};
+
+let agent = Agent::with_config("api-key", config).await?;
+```
+
+## Agent Capabilities
+
+### Decision Making
+
+Agents can analyze situations and make autonomous decisions:
+
+```rust
+agent.execute(
+    "Look at the error logs and determine the root cause"
+).await?;
+```
+
+### Tool Usage
+
+Agents automatically select and use appropriate tools:
+
+```rust
+// Agent will use ReadFile tool automatically
+agent.execute("What's in the config.json file?").await?;
+```
+
+### Context Retention
+
+Maintain conversation context across multiple interactions:
+
+```rust
+let session = agent.create_session().await?;
+
+session.send("Read the README").await?;
+session.send("Summarize what you just read").await?;
+// Agent remembers the README content
+```
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Provide Clear Instructions">
+    Give agents specific, actionable instructions:
+
+    **Good**: "Read the config.json file and extract the database URL"
+
+    **Bad**: "Do something with the config"
+  </Accordion>
+
+  <Accordion title="Enable Only Necessary Tools">
+    Only register tools that the agent needs to reduce complexity and improve safety:
+
+    ```rust
+    // Only add file reading, not writing
+    agent.add_tool(ReadFile::new());
+    ```
+  </Accordion>
+
+  <Accordion title="Handle Errors Gracefully">
+    Always handle potential errors from agent operations:
+
+    ```rust
+    match agent.execute("task").await {
+        Ok(response) => println!("{}", response),
+        Err(e) => eprintln!("Agent error: {}", e),
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Appropriate Models">
+    Choose the right model for your use case:
+
+    - **Claude Opus**: Complex reasoning tasks
+    - **Claude Sonnet**: Balanced performance and cost
+    - **Gemini**: Multimodal capabilities
+  </Accordion>
+</AccordionGroup>
+
+## Advanced Features
+
+### Custom System Prompts
+
+Customize the agent's behavior with system prompts:
+
+```rust
+let config = AgentConfig {
+    system_prompt: "You are a helpful code review assistant...",
+    ..Default::default()
+};
+```
+
+### Hooks and Callbacks
+
+Add hooks to monitor agent behavior:
+
+```rust
+agent.on_tool_use(|tool_name, args| {
+    println!("Agent used tool: {}", tool_name);
+});
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Tools"
+    icon="wrench"
+    href="/concepts/tools"
+  >
+    Learn about available tools
+  </Card>
+  <Card
+    title="MCP Integration"
+    icon="plug"
+    href="/concepts/mcp"
+  >
+    Extend agents with MCP
+  </Card>
+</CardGroup>

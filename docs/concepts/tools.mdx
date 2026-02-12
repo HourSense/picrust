@@ -1,0 +1,235 @@
+---
+title: 'Tools'
+description: 'Built-in and custom tools for Shadow Agent SDK'
+---
+
+## Overview
+
+Tools enable agents to interact with their environment, perform actions, and access external resources. Shadow Agent SDK comes with a comprehensive set of built-in tools.
+
+## Built-in Tools
+
+### File System Tools
+
+<CardGroup cols={2}>
+  <Card title="Read" icon="file">
+    Read contents of files
+    ```rust
+    agent.add_tool(ReadFile::new());
+    ```
+  </Card>
+
+  <Card title="Write" icon="pen-to-square">
+    Create or modify files
+    ```rust
+    agent.add_tool(WriteFile::new());
+    ```
+  </Card>
+
+  <Card title="Glob" icon="magnifying-glass">
+    Search files with patterns
+    ```rust
+    agent.add_tool(Glob::new());
+    ```
+  </Card>
+
+  <Card title="Grep" icon="code">
+    Search file contents
+    ```rust
+    agent.add_tool(Grep::new());
+    ```
+  </Card>
+</CardGroup>
+
+### System Tools
+
+<CardGroup cols={2}>
+  <Card title="Bash" icon="terminal">
+    Execute shell commands
+    ```rust
+    agent.add_tool(BashExecutor::new());
+    ```
+  </Card>
+
+  <Card title="Environment" icon="gear">
+    Access environment variables
+    ```rust
+    agent.add_tool(EnvReader::new());
+    ```
+  </Card>
+</CardGroup>
+
+## How Tools Work
+
+When an agent receives a task, it:
+
+1. **Analyzes** the request to understand what needs to be done
+2. **Selects** the appropriate tool(s) from its available toolset
+3. **Executes** the tool with the necessary parameters
+4. **Processes** the tool output
+5. **Responds** to the user with results
+
+<Frame>
+  <img src="/images/tool-flow.png" alt="Tool execution flow" />
+</Frame>
+
+## Creating Custom Tools
+
+Build your own tools by implementing the `Tool` trait:
+
+```rust
+use shadow_agent_sdk::{Tool, ToolResult};
+use async_trait::async_trait;
+use serde_json::Value;
+
+pub struct CustomTool;
+
+#[async_trait]
+impl Tool for CustomTool {
+    fn name(&self) -> &str {
+        "custom_tool"
+    }
+
+    fn description(&self) -> &str {
+        "Does something custom"
+    }
+
+    fn parameters(&self) -> Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "input": {
+                    "type": "string",
+                    "description": "Input parameter"
+                }
+            },
+            "required": ["input"]
+        })
+    }
+
+    async fn execute(&self, params: Value) -> ToolResult {
+        let input = params["input"].as_str().unwrap();
+
+        // Your custom logic here
+        let result = format!("Processed: {}", input);
+
+        Ok(result)
+    }
+}
+```
+
+Register your custom tool:
+
+```rust
+agent.add_tool(CustomTool);
+```
+
+## Tool Security
+
+<Warning>
+  Tools like `BashExecutor` can execute arbitrary commands. Only enable them when necessary and consider the security implications.
+</Warning>
+
+### Best Practices
+
+<AccordionGroup>
+  <Accordion title="Principle of Least Privilege">
+    Only enable tools that are absolutely necessary for the agent's tasks:
+
+    ```rust
+    // Good: Only read access
+    agent.add_tool(ReadFile::new());
+
+    // Be careful: Full write access
+    agent.add_tool(WriteFile::new());
+    ```
+  </Accordion>
+
+  <Accordion title="Validate Tool Parameters">
+    Add validation in custom tools:
+
+    ```rust
+    async fn execute(&self, params: Value) -> ToolResult {
+        let path = params["path"].as_str()
+            .ok_or("Invalid path parameter")?;
+
+        // Validate path is within allowed directory
+        if !path.starts_with("/safe/directory/") {
+            return Err("Path not allowed".into());
+        }
+
+        // Continue with tool execution
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Audit Tool Usage">
+    Log all tool executions for audit trails:
+
+    ```rust
+    agent.on_tool_use(|tool_name, params| {
+        tracing::info!(
+            tool = tool_name,
+            params = ?params,
+            "Tool executed"
+        );
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Tool Examples
+
+### Example: File Analysis
+
+```rust
+use shadow_agent_sdk::{Agent, tools::*};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut agent = Agent::new("api-key").await?;
+
+    // Add file tools
+    agent.add_tool(ReadFile::new());
+    agent.add_tool(Glob::new());
+
+    // Ask agent to analyze project structure
+    let response = agent.execute(
+        "List all Rust files in the src directory and \
+         summarize the main modules"
+    ).await?;
+
+    println!("{}", response);
+    Ok(())
+}
+```
+
+### Example: Code Execution
+
+```rust
+let mut agent = Agent::new("api-key").await?;
+agent.add_tool(BashExecutor::new());
+
+let response = agent.execute(
+    "Run the test suite and report any failures"
+).await?;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="MCP Tools"
+    icon="plug"
+    href="/concepts/mcp"
+  >
+    Extend tools with MCP servers
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/introduction"
+  >
+    View tool API docs
+  </Card>
+</CardGroup>

@@ -1,0 +1,163 @@
+---
+title: 'Quickstart'
+description: 'Start building with Shadow Agent SDK in under 5 minutes'
+---
+
+## Prerequisites
+
+Before you begin, make sure you have:
+
+- Rust 1.70 or higher installed
+- An Anthropic API key or Google AI API key
+- Basic familiarity with async Rust
+
+## Installation
+
+Add Shadow Agent SDK to your project's `Cargo.toml`:
+
+```toml
+[dependencies]
+shadow-agent-sdk = "0.1.0"
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+```
+
+## Your First Agent
+
+Create a new file `main.rs` and add the following code:
+
+```rust
+use shadow_agent_sdk::Agent;
+use anyhow::Result;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    // Initialize the agent with your API key
+    let agent = Agent::new("your-anthropic-api-key").await?;
+
+    // Execute a simple task
+    let response = agent.execute("What is 2 + 2?").await?;
+
+    println!("Agent response: {}", response);
+
+    Ok(())
+}
+```
+
+## Run Your Agent
+
+Execute your agent:
+
+```bash
+cargo run
+```
+
+You should see the agent's response in your terminal.
+
+## Using Tools
+
+Agents can use tools to interact with the file system, run commands, and more:
+
+```rust
+use shadow_agent_sdk::{Agent, tools};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut agent = Agent::new("your-api-key").await?;
+
+    // Enable file system tools
+    agent.add_tool(tools::ReadFile::new());
+    agent.add_tool(tools::WriteFile::new());
+
+    // Ask the agent to create a file
+    let response = agent.execute(
+        "Create a file called hello.txt with the content 'Hello, World!'"
+    ).await?;
+
+    println!("{}", response);
+
+    Ok(())
+}
+```
+
+## MCP Integration
+
+Use Model Context Protocol servers for extended functionality:
+
+```rust
+use shadow_agent_sdk::{Agent, mcp::MCPClient};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut agent = Agent::new("your-api-key").await?;
+
+    // Connect to an MCP server
+    let mcp_client = MCPClient::connect("http://localhost:3000").await?;
+    agent.add_mcp_client(mcp_client);
+
+    // Now the agent can use MCP tools
+    let response = agent.execute("Use the MCP tool to fetch data").await?;
+
+    Ok(())
+}
+```
+
+## Configuration
+
+Set up environment variables for easier configuration:
+
+```bash .env
+ANTHROPIC_API_KEY=your_api_key_here
+LOG_LEVEL=info
+```
+
+Load them in your code:
+
+```rust
+use std::env;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    dotenv::dotenv().ok();
+
+    let api_key = env::var("ANTHROPIC_API_KEY")?;
+    let agent = Agent::new(&api_key).await?;
+
+    // Your code here
+
+    Ok(())
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Explore Features"
+    icon="stars"
+    href="/features"
+  >
+    Learn about all SDK capabilities
+  </Card>
+  <Card
+    title="Understanding Agents"
+    icon="robot"
+    href="/concepts/agents"
+  >
+    Deep dive into agent architecture
+  </Card>
+  <Card
+    title="Tools Reference"
+    icon="wrench"
+    href="/concepts/tools"
+  >
+    Browse available tools
+  </Card>
+  <Card
+    title="MCP Guide"
+    icon="plug"
+    href="/concepts/mcp"
+  >
+    Master Model Context Protocol
+  </Card>
+</CardGroup>

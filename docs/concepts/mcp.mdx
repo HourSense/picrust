@@ -1,0 +1,295 @@
+---
+title: 'Model Context Protocol'
+description: 'Integrate MCP servers with Shadow Agent SDK'
+---
+
+## What is MCP?
+
+Model Context Protocol (MCP) is an open standard that enables AI models to securely connect to various data sources and tools. With MCP, you can extend your agents' capabilities without modifying the core SDK.
+
+<Info>
+  MCP allows agents to access databases, APIs, file systems, and custom tools through a standardized interface.
+</Info>
+
+## Why Use MCP?
+
+<CardGroup cols={2}>
+  <Card title="Extensibility" icon="puzzle-piece">
+    Add new capabilities without changing SDK code
+  </Card>
+  <Card title="Security" icon="shield">
+    Controlled access to sensitive resources
+  </Card>
+  <Card title="Modularity" icon="cubes">
+    Mix and match different MCP servers
+  </Card>
+  <Card title="Standards-Based" icon="certificate">
+    Industry-standard protocol
+  </Card>
+</CardGroup>
+
+## Connecting to MCP Servers
+
+### Basic Connection
+
+Connect to an MCP server using HTTP:
+
+```rust
+use shadow_agent_sdk::mcp::MCPClient;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut agent = Agent::new("api-key").await?;
+
+    // Connect to MCP server
+    let mcp = MCPClient::connect("http://localhost:3000").await?;
+
+    // Add MCP client to agent
+    agent.add_mcp_client(mcp);
+
+    Ok(())
+}
+```
+
+### Multiple MCP Servers
+
+Connect to multiple MCP servers for different capabilities:
+
+```rust
+// Database access
+let db_mcp = MCPClient::connect("http://localhost:3001").await?;
+agent.add_mcp_client(db_mcp);
+
+// File system access
+let fs_mcp = MCPClient::connect("http://localhost:3002").await?;
+agent.add_mcp_client(fs_mcp);
+
+// API integration
+let api_mcp = MCPClient::connect("http://localhost:3003").await?;
+agent.add_mcp_client(api_mcp);
+```
+
+## Available MCP Tools
+
+Once connected, agents can automatically discover and use MCP tools:
+
+```rust
+// Agent will automatically use MCP tools when appropriate
+let response = agent.execute(
+    "Query the database for user records created today"
+).await?;
+```
+
+## Building MCP Servers
+
+Create your own MCP server to expose custom functionality:
+
+```rust
+use shadow_agent_sdk::mcp::{MCPServer, MCPTool};
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut server = MCPServer::new("0.0.0.0:3000");
+
+    // Register custom tool
+    server.register_tool(DatabaseTool::new());
+
+    // Start server
+    server.start().await?;
+
+    Ok(())
+}
+```
+
+### Example: Database Tool
+
+```rust
+use shadow_agent_sdk::mcp::MCPTool;
+use async_trait::async_trait;
+
+struct DatabaseTool {
+    pool: sqlx::PgPool,
+}
+
+#[async_trait]
+impl MCPTool for DatabaseTool {
+    fn name(&self) -> &str {
+        "query_database"
+    }
+
+    fn description(&self) -> &str {
+        "Execute SQL queries on the database"
+    }
+
+    async fn execute(&self, params: serde_json::Value) -> Result<String> {
+        let query = params["query"].as_str().unwrap();
+
+        // Execute query safely
+        let results = sqlx::query(query)
+            .fetch_all(&self.pool)
+            .await?;
+
+        Ok(serde_json::to_string(&results)?)
+    }
+}
+```
+
+## MCP Configuration
+
+### Authentication
+
+Configure authentication for secure MCP connections:
+
+```rust
+use shadow_agent_sdk::mcp::{MCPClient, MCPAuth};
+
+let auth = MCPAuth::Bearer("your-token".to_string());
+
+let mcp = MCPClient::connect("http://localhost:3000")
+    .with_auth(auth)
+    .await?;
+```
+
+### Timeout Configuration
+
+Set timeouts for MCP operations:
+
+```rust
+let mcp = MCPClient::connect("http://localhost:3000")
+    .with_timeout(Duration::from_secs(30))
+    .await?;
+```
+
+## MCP Best Practices
+
+<AccordionGroup>
+  <Accordion title="Validate All Inputs">
+    Always validate inputs in your MCP tools to prevent injection attacks:
+
+    ```rust
+    async fn execute(&self, params: Value) -> Result<String> {
+        let query = params["query"].as_str()
+            .ok_or("Invalid query parameter")?;
+
+        // Validate query before execution
+        if !is_safe_query(query) {
+            return Err("Unsafe query detected".into());
+        }
+
+        // Execute safely
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Use Connection Pooling">
+    Reuse connections for better performance:
+
+    ```rust
+    struct DatabaseTool {
+        pool: sqlx::PgPool,  // Connection pool
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Implement Rate Limiting">
+    Protect your MCP servers from abuse:
+
+    ```rust
+    server.with_rate_limit(100, Duration::from_secs(60));
+    ```
+  </Accordion>
+
+  <Accordion title="Monitor and Log">
+    Track MCP usage for debugging and security:
+
+    ```rust
+    agent.on_mcp_call(|tool_name, params| {
+        tracing::info!(
+            mcp_tool = tool_name,
+            "MCP tool called"
+        );
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Common MCP Use Cases
+
+### Database Access
+
+```rust
+let response = agent.execute(
+    "Find all users who signed up in the last 7 days"
+).await?;
+```
+
+### API Integration
+
+```rust
+let response = agent.execute(
+    "Fetch the latest weather data for San Francisco"
+).await?;
+```
+
+### File System Operations
+
+```rust
+let response = agent.execute(
+    "List all PDF files modified this week"
+).await?;
+```
+
+### Custom Business Logic
+
+```rust
+let response = agent.execute(
+    "Calculate the monthly revenue report"
+).await?;
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection Refused">
+    Ensure the MCP server is running and accessible:
+    ```bash
+    curl http://localhost:3000/health
+    ```
+  </Accordion>
+
+  <Accordion title="Authentication Failed">
+    Verify your authentication credentials:
+    ```rust
+    let mcp = MCPClient::connect(url)
+        .with_auth(MCPAuth::Bearer(token))
+        .await?;
+    ```
+  </Accordion>
+
+  <Accordion title="Tool Not Found">
+    Check that the tool is registered on the MCP server:
+    ```rust
+    let tools = mcp.list_tools().await?;
+    println!("Available tools: {:?}", tools);
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Tools Reference"
+    icon="wrench"
+    href="/concepts/tools"
+  >
+    Learn about built-in tools
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/introduction"
+  >
+    View the complete API
+  </Card>
+</CardGroup>

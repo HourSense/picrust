@@ -1,0 +1,92 @@
+---
+title: Introduction
+description: 'Welcome to Shadow Agent SDK - Build powerful agentic applications with ease'
+---
+
+## What is Shadow Agent SDK?
+
+Shadow Agent SDK is a Rust-based framework for building intelligent agents that can interact with large language models (LLMs) and use tools to accomplish complex tasks.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get started with your first agent in minutes
+  </Card>
+  <Card
+    title="Features"
+    icon="stars"
+    href="/features"
+  >
+    Explore the powerful features of the SDK
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/introduction"
+  >
+    Detailed API documentation
+  </Card>
+  <Card
+    title="MCP Support"
+    icon="plug"
+    href="/concepts/mcp"
+  >
+    Learn about Model Context Protocol integration
+  </Card>
+</CardGroup>
+
+## Key Features
+
+- **Multi-LLM Support**: Works with Claude (Anthropic) and Gemini
+- **Tool System**: Built-in tools for file operations, bash commands, and more
+- **MCP Integration**: Support for Model Context Protocol
+- **Async-First**: Built on Tokio for high-performance async operations
+- **Type-Safe**: Leverages Rust's type system for reliable agent behavior
+
+## Getting Started
+
+<Steps>
+  <Step title="Install the SDK">
+    Add Shadow Agent SDK to your `Cargo.toml`:
+    ```toml
+    [dependencies]
+    shadow-agent-sdk = "0.1.0"
+    ```
+  </Step>
+  <Step title="Create an Agent">
+    Initialize your first agent with the API key:
+    ```rust
+    use shadow_agent_sdk::Agent;
+
+    let agent = Agent::new("your-api-key").await?;
+    ```
+  </Step>
+  <Step title="Run Tasks">
+    Start executing tasks with your agent:
+    ```rust
+    let response = agent.execute("Help me analyze this code").await?;
+    ```
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start Guide"
+    icon="play"
+    href="/quickstart"
+  >
+    Follow our step-by-step guide
+  </Card>
+  <Card
+    title="Core Concepts"
+    icon="lightbulb"
+    href="/concepts/agents"
+  >
+    Understand how agents work
+  </Card>
+</CardGroup>

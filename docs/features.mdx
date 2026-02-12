@@ -1,0 +1,167 @@
+---
+title: 'Features'
+description: 'Explore the powerful features of Shadow Agent SDK'
+---
+
+## Overview
+
+Shadow Agent SDK provides a comprehensive set of features for building intelligent, autonomous agents.
+
+## Multi-LLM Provider Support
+
+Shadow Agent SDK supports multiple LLM providers out of the box:
+
+<AccordionGroup>
+  <Accordion icon="brain" title="Claude (Anthropic)">
+    Full support for Claude models including Claude 3.5 Sonnet and Claude 3 Opus.
+
+    ```rust
+    let agent = Agent::with_provider(
+        Provider::Anthropic("your-api-key")
+    ).await?;
+    ```
+  </Accordion>
+
+  <Accordion icon="sparkles" title="Gemini (Google)">
+    Integration with Google's Gemini models for diverse AI capabilities.
+
+    ```rust
+    let agent = Agent::with_provider(
+        Provider::Gemini("your-api-key")
+    ).await?;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Built-in Tool System
+
+Agents can use various tools to interact with their environment:
+
+### File Operations
+
+- **Read Files**: Read content from local files
+- **Write Files**: Create or update files
+- **Glob Patterns**: Search for files using glob patterns
+- **Grep Search**: Search file contents with regex patterns
+
+### System Integration
+
+- **Bash Execution**: Run shell commands
+- **Environment Variables**: Access system environment
+- **Process Management**: Manage subprocess execution
+
+## Model Context Protocol (MCP)
+
+<Card title="MCP Support" icon="plug">
+  Connect to MCP servers to extend agent capabilities with custom tools and resources.
+</Card>
+
+```rust
+use shadow_agent_sdk::mcp::MCPClient;
+
+// Connect to an MCP server
+let mcp = MCPClient::connect("http://localhost:3000").await?;
+agent.add_mcp_client(mcp);
+```
+
+Benefits of MCP:
+- **Extensibility**: Add custom tools without modifying the SDK
+- **Standardization**: Use the industry-standard protocol
+- **Modularity**: Mix and match different MCP servers
+
+## Async Runtime
+
+Built on Tokio for high-performance async operations:
+
+<CodeGroup>
+```rust Streaming Responses
+let mut stream = agent.execute_stream("Complex task").await?;
+
+while let Some(chunk) = stream.next().await {
+    print!("{}", chunk);
+}
+```
+
+```rust Concurrent Execution
+let task1 = agent.execute("Task 1");
+let task2 = agent.execute("Task 2");
+
+let (result1, result2) = tokio::join!(task1, task2);
+```
+</CodeGroup>
+
+## Logging & Observability
+
+Comprehensive logging with `tracing`:
+
+```rust
+use tracing::{info, debug};
+
+// Logs are automatically structured and filterable
+info!("Agent initialized");
+debug!(task = "analysis", "Starting task execution");
+```
+
+Configure log levels:
+```bash
+RUST_LOG=debug cargo run
+```
+
+## Type Safety
+
+Leverage Rust's type system for reliable agent behavior:
+
+- **Compile-time Guarantees**: Catch errors before runtime
+- **Zero-cost Abstractions**: High-level APIs with no performance penalty
+- **Memory Safety**: No data races or memory leaks
+
+## Session Management
+
+Built-in conversation and session handling:
+
+```rust
+// Maintain conversation context
+let session = agent.create_session().await?;
+
+session.send("What is Rust?").await?;
+session.send("Can you give me an example?").await?;
+// Agent remembers previous context
+```
+
+## Error Handling
+
+Rich error types with `anyhow` and `thiserror`:
+
+```rust
+use anyhow::{Result, Context};
+
+let result = agent.execute("task")
+    .await
+    .context("Failed to execute task")?;
+```
+
+## Performance
+
+- **Async I/O**: Non-blocking operations
+- **Connection Pooling**: Efficient API request handling
+- **Stream Processing**: Handle large responses efficiently
+- **Zero-copy Serialization**: Minimal overhead
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card
+    title="Core Concepts"
+    icon="book"
+    href="/concepts/agents"
+  >
+    Understand agent architecture
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api-reference/introduction"
+  >
+    Explore the API
+  </Card>
+</CardGroup>

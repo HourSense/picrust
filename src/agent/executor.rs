@@ -31,12 +31,19 @@ impl ToolExecutor {
         tool_name: &str,
         tool_id: &str,
         input: &Value,
+        hook_short_circuit: bool,
     ) -> ToolResult {
         let mut current_input = input.clone();
 
         // === Run PreToolUse hooks ===
         if let Some(hooks) = hooks {
-            let mut ctx = HookContext::pre_tool_use(internals, tool_name, &current_input, tool_id);
+            let mut ctx = HookContext::pre_tool_use(
+                internals,
+                tool_name,
+                &current_input,
+                tool_id,
+                hook_short_circuit,
+            );
             let result = hooks.run(&mut ctx);
 
             // Hook may have modified tool_input
@@ -63,6 +70,7 @@ impl ToolExecutor {
                         tool_name,
                         tool_id,
                         &current_input,
+                        hook_short_circuit,
                     )
                     .await;
                 }
@@ -85,8 +93,16 @@ impl ToolExecutor {
         match internals.check_permission(tool_name, &input_str) {
             CheckResult::Allowed => {
                 tracing::info!("[Executor] Permission allowed for {}", tool_name);
-                Self::execute_with_hooks(internals, tools, hooks, tool_name, tool_id, &current_input)
-                    .await
+                Self::execute_with_hooks(
+                    internals,
+                    tools,
+                    hooks,
+                    tool_name,
+                    tool_id,
+                    &current_input,
+                    hook_short_circuit,
+                )
+                .await
             }
 
             CheckResult::Denied => {
@@ -105,6 +121,7 @@ impl ToolExecutor {
                     &current_input,
                     &action_desc,
                     tool_info.and_then(|i| i.details),
+                    hook_short_circuit,
                 )
                 .await
             }
@@ -121,6 +138,7 @@ impl ToolExecutor {
         input: &Value,
         action_desc: &str,
         details: Option<String>,
+        hook_short_circuit: bool,
     ) -> ToolResult {
         let input_str = input.to_string();
 
@@ -154,8 +172,16 @@ impl ToolExecutor {
 
                 if allowed {
                     tracing::info!("[Executor] User allowed {}", tool_name);
-                    Self::execute_with_hooks(internals, tools, hooks, tool_name, tool_id, input)
-                        .await
+                    Self::execute_with_hooks(
+                        internals,
+                        tools,
+                        hooks,
+                        tool_name,
+                        tool_id,
+                        input,
+                        hook_short_circuit,
+                    )
+                    .await
                 } else {
                     tracing::info!("[Executor] User denied {}", tool_name);
                     ToolResult::error(format!("User denied permission for: {}", tool_name))
@@ -192,6 +218,7 @@ impl ToolExecutor {
         tool_name: &str,
         tool_id: &str,
         input: &Value,
+        hook_short_circuit: bool,
     ) -> ToolResult {
         // Set the current tool_use_id on context so tools can access it
         internals.context.current_tool_use_id = Some(tool_id.to_string());
@@ -214,8 +241,14 @@ impl ToolExecutor {
             Ok(result) => {
                 // Run PostToolUse hooks
                 if let Some(hooks) = hooks {
-                    let mut ctx =
-                        HookContext::post_tool_use(internals, tool_name, input, tool_id, &result);
+                    let mut ctx = HookContext::post_tool_use(
+                        internals,
+                        tool_name,
+                        input,
+                        tool_id,
+                        &result,
+                        hook_short_circuit,
+                    );
                     let _hook_result = hooks.run(&mut ctx);
                     // PostToolUse hooks are for logging/observation, we don't act on the result
                 }
@@ -227,7 +260,12 @@ impl ToolExecutor {
                 // Run PostToolUseFailure hooks
                 if let Some(hooks) = hooks {
                     let mut ctx = HookContext::post_tool_use_failure(
-                        internals, tool_name, input, tool_id, &error_msg,
+                        internals,
+                        tool_name,
+                        input,
+                        tool_id,
+                        &error_msg,
+                        hook_short_circuit,
                     );
                     let _hook_result = hooks.run(&mut ctx);
                 }
@@ -260,6 +298,6 @@ impl ToolExecutor {
         tool_id: &str,
         input: &Value,
     ) -> ToolResult {
-        Self::execute_with_hooks(internals, tools, None, tool_name, tool_id, input).await
+        Self::execute_with_hooks(internals, tools, None, tool_name, tool_id, input, false).await
     }
 }

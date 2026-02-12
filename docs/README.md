@@ -1913,6 +1913,75 @@ HookResult::ask()
 HookResult::none()
 ```
 
+#### Hook Execution Model
+
+**Default Behavior (Recommended):**
+
+By default, ALL matching hooks run to completion - there is no short-circuiting. This ensures:
+- Security hooks always execute (can't be bypassed by earlier hooks)
+- Logging/monitoring hooks always fire
+- Multiple hooks can compose properly
+
+**Optional Short-Circuiting:**
+
+For performance-critical scenarios, you can enable short-circuiting:
+
+```rust
+let config = AgentConfig::new("You are a helpful assistant")
+    .with_hooks(hooks)
+    .with_hook_short_circuit(true);  // Stop on first Deny
+```
+
+⚠️ **Warning:** When enabled, the first hook to return `Deny` stops execution. Later security/monitoring hooks won't run.
+
+**Result Combination Priority:**
+
+When multiple hooks return different results, they are combined using this priority:
+
+```
+Deny > Allow > Ask > None
+```
+
+**Rules:**
+1. If ANY hook returns `Deny` → Final result is `Deny` (most restrictive wins)
+2. Else if ANY hook returns `Allow` → Final result is `Allow`
+3. Else if ANY hook returns `Ask` → Final result is `Ask`
+4. Else (all returned `None`) → Final result is `None` (continue normal flow)
+
+**Example (Default: All Hooks Run):**
+
+```rust
+// Hook 1: Auto-approve read-only tools
+hooks.add_with_pattern(HookEvent::PreToolUse, "Read|Glob|Grep", |_| {
+    HookResult::allow()  // Skip permissions
+})?;
+
+// Hook 2: Block dangerous patterns (ALWAYS runs, even if Hook 1 approved)
+hooks.add(HookEvent::PreToolUse, |ctx| {
+    if let Some(input) = ctx.tool_input.as_ref() {
+        if input.to_string().contains("/etc/passwd") {
+            return HookResult::deny("Access to sensitive files blocked");
+        }
+    }
+    HookResult::none()
+})?;
+
+// Hook 3: Audit logging (ALWAYS runs)
+hooks.add(HookEvent::PreToolUse, |ctx| {
+    audit_log(ctx.tool_name, ctx.tool_input);
+    HookResult::none()
+})?;
+```
+
+**When user asks to "Read /etc/passwd":**
+1. Hook 1 runs → Returns `Allow` (matches "Read" pattern)
+2. Hook 2 runs → Returns `Deny` (detects "/etc/passwd")
+3. Hook 3 runs → Logs the attempt, returns `None`
+4. **Final decision:** `Deny` (Deny > Allow > None)
+5. Tool is blocked, security hook prevented the operation
+
+This ensures security policies can't be bypassed and all hooks get visibility.
+
 #### Modifying Tool Input
 
 ```rust
@@ -2550,6 +2619,7 @@ cargo run --example session_browser
 | `with_debug(bool)` | Enable debug logging |
 | `with_thinking(budget)` | Enable extended thinking |
 | `with_hooks(Arc<HookRegistry>)` | Set behavior hooks |
+| `with_hook_short_circuit(bool)` | Enable hook short-circuit on Deny (default: false) |
 | `with_max_tool_iterations(n)` | Limit tool call loops |
 | `with_auto_save(bool)` | Auto-save session |
 | `with_injection_chain(chain)` | Set context injections |

@@ -55,6 +55,9 @@ pub struct HookContext<'a> {
     /// Full agent internals - access to session, context, permissions
     pub internals: &'a mut AgentInternals,
 
+    /// Whether to short-circuit on Deny (from agent config)
+    pub(crate) short_circuit_on_deny: bool,
+
     // === Tool-specific (populated for tool hooks) ===
     /// Tool name being called
     pub tool_name: Option<String>,
@@ -91,10 +94,12 @@ impl<'a> HookContext<'a> {
         tool_name: &str,
         tool_input: &Value,
         tool_use_id: &str,
+        short_circuit_on_deny: bool,
     ) -> Self {
         Self {
             event: HookEvent::PreToolUse,
             internals,
+            short_circuit_on_deny,
             tool_name: Some(tool_name.to_string()),
             tool_input: Some(tool_input.clone()),
             tool_use_id: Some(tool_use_id.to_string()),
@@ -113,10 +118,12 @@ impl<'a> HookContext<'a> {
         tool_input: &Value,
         tool_use_id: &str,
         result: &ToolResult,
+        short_circuit_on_deny: bool,
     ) -> Self {
         Self {
             event: HookEvent::PostToolUse,
             internals,
+            short_circuit_on_deny,
             tool_name: Some(tool_name.to_string()),
             tool_input: Some(tool_input.clone()),
             tool_use_id: Some(tool_use_id.to_string()),
@@ -135,10 +142,12 @@ impl<'a> HookContext<'a> {
         tool_input: &Value,
         tool_use_id: &str,
         error: &str,
+        short_circuit_on_deny: bool,
     ) -> Self {
         Self {
             event: HookEvent::PostToolUseFailure,
             internals,
+            short_circuit_on_deny,
             tool_name: Some(tool_name.to_string()),
             tool_input: Some(tool_input.clone()),
             tool_use_id: Some(tool_use_id.to_string()),
@@ -151,10 +160,15 @@ impl<'a> HookContext<'a> {
     }
 
     /// Create context for UserPromptSubmit hook
-    pub fn user_prompt_submit(internals: &'a mut AgentInternals, prompt: &str) -> Self {
+    pub fn user_prompt_submit(
+        internals: &'a mut AgentInternals,
+        prompt: &str,
+        short_circuit_on_deny: bool,
+    ) -> Self {
         Self {
             event: HookEvent::UserPromptSubmit,
             internals,
+            short_circuit_on_deny,
             tool_name: None,
             tool_input: None,
             tool_use_id: None,
@@ -171,10 +185,12 @@ impl<'a> HookContext<'a> {
         internals: &'a mut AgentInternals,
         content_blocks: &[ContentBlock],
         stop_reason: Option<StopReason>,
+        short_circuit_on_deny: bool,
     ) -> Self {
         Self {
             event: HookEvent::PostAssistantResponse,
             internals,
+            short_circuit_on_deny,
             tool_name: None,
             tool_input: None,
             tool_use_id: None,

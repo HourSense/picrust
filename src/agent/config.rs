@@ -68,6 +68,19 @@ pub struct AgentConfig {
     /// If set, this provider is used for auto-naming conversations (typically a
     /// lightweight/fast model). If not set, the main agent LLM is used.
     pub naming_llm: Option<Arc<dyn LlmProvider>>,
+
+    /// Whether to enable hook short-circuiting.
+    ///
+    /// When enabled (false by default), if a hook returns `Deny`, subsequent hooks
+    /// will not run. This provides a performance optimization but means:
+    /// - Later security hooks might not run
+    /// - Logging/monitoring hooks might not fire
+    ///
+    /// **Default: false** (safer - all hooks run, Deny wins at the end)
+    ///
+    /// Set to true only if you need the performance optimization and understand
+    /// that security/monitoring hooks may be bypassed.
+    pub hook_short_circuit: bool,
 }
 
 impl AgentConfig {
@@ -86,6 +99,7 @@ impl AgentConfig {
             auto_name_conversation: true,
             enable_prompt_caching: true,
             naming_llm: None,
+            hook_short_circuit: false, // Safe default: all hooks run
         }
     }
 
@@ -243,6 +257,38 @@ impl AgentConfig {
         self
     }
 
+    /// Enable or disable hook short-circuiting
+    ///
+    /// **Default: false** (safer - all hooks run, security can't be bypassed)
+    ///
+    /// When false (default):
+    /// - ALL hooks run to completion
+    /// - If ANY hook returns `Deny`, final result is `Deny`
+    /// - Security hooks can't be bypassed by earlier `Allow` hooks
+    /// - Logging/monitoring hooks always fire
+    ///
+    /// When true:
+    /// - First hook to return `Deny` stops execution
+    /// - Later hooks don't run (performance optimization)
+    /// - ⚠️ Security hooks might not run if bypassed by earlier hooks
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Safe mode (default): all hooks run
+    /// let config = AgentConfig::new("...")
+    ///     .with_hooks(hooks);
+    ///
+    /// // Performance mode: short-circuit on first Deny
+    /// let config = AgentConfig::new("...")
+    ///     .with_hooks(hooks)
+    ///     .with_hook_short_circuit(true);
+    /// ```
+    pub fn with_hook_short_circuit(mut self, enabled: bool) -> Self {
+        self.hook_short_circuit = enabled;
+        self
+    }
+
     /// Get tool definitions (empty vec if no tools)
     pub fn tool_definitions(&self) -> Vec<crate::llm::ToolDefinition> {
         self.tools
@@ -272,6 +318,7 @@ impl std::fmt::Debug for AgentConfig {
             .field("auto_name_conversation", &self.auto_name_conversation)
             .field("enable_prompt_caching", &self.enable_prompt_caching)
             .field("naming_llm", &self.naming_llm.as_ref().map(|l| l.model()))
+            .field("hook_short_circuit", &self.hook_short_circuit)
             .finish()
     }
 }

@@ -11,6 +11,9 @@
 //! - Log and audit tool calls
 //! - Filter or modify conversation history
 //!
+//! **Important:** ALL matching hooks run to completion (no short-circuiting).
+//! This ensures security hooks can't be bypassed and monitoring hooks always fire.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -75,6 +78,17 @@
 //! | `HookResult::allow()` | Skip permission check, execute tool |
 //! | `HookResult::deny("reason")` | Block tool, return error to LLM |
 //! | `HookResult::ask()` | Use normal permission flow |
+//!
+//! # Result Combination
+//!
+//! When multiple hooks run, results are combined with priority: **Deny > Allow > Ask > None**
+//!
+//! - If ANY hook returns `Deny` → Tool is blocked (most restrictive wins)
+//! - Else if ANY hook returns `Allow` → Skip permissions
+//! - Else if ANY hook returns `Ask` → Use normal permission flow
+//! - Else (all returned `None`) → Continue normal flow
+//!
+//! This ensures security hooks can't be bypassed by earlier allow hooks.
 
 mod registry;
 mod types;

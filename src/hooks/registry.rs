@@ -180,12 +180,25 @@ impl HookRegistry {
     /// For tool hooks, filters by tool name.
     /// For non-tool hooks (like UserPromptSubmit), runs all hooks.
     ///
-    /// Results are combined:
-    /// - Deny wins over Allow wins over Ask
-    /// - First deny/allow reason is used
+    /// **Hook execution behavior:**
+    /// - By default (short_circuit_on_deny = false): ALL hooks run to completion
+    ///   - Security hooks can't be bypassed
+    ///   - Logging/monitoring hooks always fire
+    ///   - Multiple hooks compose properly
+    ///
+    /// - When short_circuit_on_deny = true: Stops on first Deny
+    ///   - Performance optimization
+    ///   - ⚠️ Later hooks may not run
+    ///
+    /// Results are combined with priority:
+    /// - If ANY hook said Deny → DENY (most restrictive wins)
+    /// - Else if ANY hook said Allow → ALLOW
+    /// - Else if ANY hook said Ask → ASK
+    /// - Else (all said None) → NONE (continue normal flow)
     pub fn run(&self, ctx: &mut HookContext<'_>) -> HookResult {
         let event = ctx.event;
         let tool_name = ctx.tool_name.clone();
+        let short_circuit = ctx.short_circuit_on_deny;
 
         let matchers = match self.hooks.get(&event) {
             Some(matchers) => matchers,
@@ -214,8 +227,9 @@ impl HookRegistry {
             // Combine results (Deny > Allow > Ask > None)
             combined = combine_results(combined, result);
 
-            // If denied, stop running more hooks
-            if combined.decision == Some(PermissionDecision::Deny) {
+            // Optionally short-circuit on Deny (if enabled in config)
+            if short_circuit && combined.decision == Some(PermissionDecision::Deny) {
+                tracing::debug!("[HookRegistry] Short-circuiting on Deny (remaining hooks skipped)");
                 break;
             }
         }
@@ -319,5 +333,53 @@ mod tests {
         assert!(registry.has_hooks(HookEvent::PreToolUse));
         assert_eq!(registry.hook_count(HookEvent::PreToolUse), 2);
         assert!(!registry.has_hooks(HookEvent::PostToolUse));
+    }
+
+    #[test]
+    fn test_combine_deny_wins_over_allow() {
+        // Deny should win over Allow
+        let result = combine_results(HookResult::allow(), HookResult::deny("blocked"));
+        assert_eq!(result.decision, Some(PermissionDecision::Deny));
+        assert_eq!(result.reason, Some("blocked".to_string()));
+
+        // Order shouldn't matter
+        let result = combine_results(HookResult::deny("blocked"), HookResult::allow());
+        assert_eq!(result.decision, Some(PermissionDecision::Deny));
+    }
+
+    #[test]
+    fn test_combine_deny_wins_over_all() {
+        // Deny > Allow
+        assert_eq!(
+            combine_results(HookResult::deny("x"), HookResult::allow()).decision,
+            Some(PermissionDecision::Deny)
+        );
+
+        // Deny > Ask
+        assert_eq!(
+            combine_results(HookResult::deny("x"), HookResult::ask()).decision,
+            Some(PermissionDecision::Deny)
+        );
+
+        // Deny > None
+        assert_eq!(
+            combine_results(HookResult::deny("x"), HookResult::none()).decision,
+            Some(PermissionDecision::Deny)
+        );
+    }
+
+    #[test]
+    fn test_combine_allow_wins_over_ask_and_none() {
+        // Allow > Ask
+        assert_eq!(
+            combine_results(HookResult::allow(), HookResult::ask()).decision,
+            Some(PermissionDecision::Allow)
+        );
+
+        // Allow > None
+        assert_eq!(
+            combine_results(HookResult::allow(), HookResult::none()).decision,
+            Some(PermissionDecision::Allow)
+        );
     }
 }

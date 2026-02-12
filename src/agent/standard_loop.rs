@@ -100,7 +100,11 @@ impl StandardAgent {
                     let mut should_process = true;
 
                     if let Some(ref hooks) = self.config.hooks {
-                        let mut ctx = HookContext::user_prompt_submit(&mut internals, &text);
+                        let mut ctx = HookContext::user_prompt_submit(
+                            &mut internals,
+                            &text,
+                            self.config.hook_short_circuit,
+                        );
                         let result = hooks.run(&mut ctx);
 
                         // Hook may have modified the prompt
@@ -353,8 +357,16 @@ impl StandardAgent {
                     // Execute tool with permission check (if tools configured)
                     let result = if let Some(ref tools) = self.config.tools {
                         let hooks = self.config.hooks.as_deref();
-                        ToolExecutor::execute_with_permission(internals, tools, hooks, name, id, input)
-                            .await
+                        ToolExecutor::execute_with_permission(
+                            internals,
+                            tools,
+                            hooks,
+                            name,
+                            id,
+                            input,
+                            self.config.hook_short_circuit,
+                        )
+                        .await
                     } else {
                         ToolResult::error(format!(
                             "No tools configured, cannot execute: {}",
@@ -399,6 +411,7 @@ impl StandardAgent {
                     internals,
                     &content_blocks,
                     stop_reason.clone(),
+                    self.config.hook_short_circuit,
                 );
                 let _result = hooks.run(&mut ctx);
                 // Hook can access/modify history via internals if needed

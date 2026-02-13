@@ -5,10 +5,10 @@ description: 'Enable Claude to reason deeply about complex problems with extende
 
 ## Overview
 
-Extended thinking allows Claude to engage in deeper reasoning before responding. When enabled, Claude thinks through problems step-by-step internally, and you can see the thinking process in real-time via streaming.
+Extended thinking allows the LLM to engage in deeper reasoning before responding. When enabled, the model thinks through problems step-by-step internally, and you can see the thinking process in real-time via streaming.
 
 <Info>
-Extended thinking is currently supported by the AnthropicProvider only.
+Extended thinking is supported by both **AnthropicProvider** and **GeminiProvider**.
 </Info>
 
 ## Enabling Extended Thinking
@@ -63,11 +63,50 @@ while let Ok(chunk) = rx.recv().await {
 
 Thinking blocks are also preserved in conversation history as `ContentBlock::Thinking`.
 
+## Usage Tracking
+
+Thinking tokens are reported separately in the usage metadata:
+
+```rust
+// After receiving a response
+let response = handle.get_last_response().await?;
+
+println!("Input tokens: {}", response.usage.input_tokens);
+println!("Output tokens: {}", response.usage.output_tokens);
+
+if let Some(thinking_tokens) = response.usage.thoughts_token_count {
+    println!("Thinking tokens: {}", thinking_tokens);
+}
+```
+
+<Info>
+**Gemini models**: Thinking tokens are counted as part of the response. You're charged for both output tokens and thinking tokens.
+</Info>
+
+## Provider-Specific Behavior
+
+### AnthropicProvider
+- Uses the thinking budget directly as token count
+- Supports budgets from 1 to 64,000 tokens
+
+### GeminiProvider
+- **Gemini 3 models** (gemini-3-flash, gemini-3-pro):
+  - Budget automatically converted to thinking levels (`minimal`, `low`, `medium`, `high`)
+  - Conversion ranges:
+    - `0-512` → `minimal`
+    - `513-2048` → `low`
+    - `2049-8192` → `medium`
+    - `8193+` → `high`
+- **Gemini 2.5 models** (gemini-2.5-flash, gemini-2.5-pro):
+  - Uses numeric budget directly (0-24,576 tokens)
+  - Set to `0` to disable thinking
+
+The conversion is automatic based on the model name - you use the same API regardless of provider.
+
 ## Limitations
 
-- **Provider support**: Only `AnthropicProvider` supports extended thinking.
 - **Non-streaming mode**: Interrupts are not detected during the thinking phase when streaming is disabled.
-- **Budget is a maximum**: Claude may use fewer tokens than the budget for simpler problems.
+- **Budget is a maximum**: The model may use fewer tokens than the budget for simpler problems.
 - **Tool calls**: Extended thinking applies to LLM responses, not during tool execution.
 
 ## Next Steps

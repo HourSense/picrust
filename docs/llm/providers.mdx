@@ -82,7 +82,7 @@ swappable.swap(gemini_provider).await;
 
 ## Extended Thinking
 
-Only supported by AnthropicProvider:
+Supported by both AnthropicProvider and GeminiProvider:
 
 ```rust
 use shadow_agent_sdk::llm::ThinkingConfig;
@@ -94,6 +94,20 @@ let config = AgentConfig::new("...")
 let config = AgentConfig::new("...")
     .with_thinking_config(ThinkingConfig::enabled(32000));
 ```
+
+### Provider Differences
+
+**AnthropicProvider**: Uses the budget directly as thinking tokens.
+
+**GeminiProvider**: Automatically converts budget to the appropriate format:
+- **Gemini 3 models**: Budget maps to thinking levels (`minimal`, `low`, `medium`, `high`)
+  - `0-512` → `minimal`
+  - `513-2048` → `low`
+  - `2049-8192` → `medium`
+  - `8193+` → `high`
+- **Gemini 2.5 models**: Uses numeric budget directly
+
+The conversion is automatic based on the model name, so you use the same API for both providers.
 
 ## Message Types
 

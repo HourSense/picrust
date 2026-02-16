@@ -25,7 +25,7 @@ use anyhow::{bail, Result};
 use std::env;
 use std::sync::Arc;
 
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     cli::ConsoleRenderer,
     helpers::{inject_system_reminder, TodoListManager},
@@ -52,7 +52,7 @@ Be concise in your responses."#;
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_env_filter("test_agent=info,shadow_agent_sdk=warn")
+        .with_env_filter("test_agent=info,picrust=warn")
         .init();
 
     // Parse command line arguments

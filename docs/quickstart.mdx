@@ -1,6 +1,6 @@
 ---
 title: 'Quickstart'
-description: 'Build your first Shadow Agent in under 5 minutes with this step-by-step guide'
+description: 'Build your first Agent in under 5 minutes with this step-by-step guide'
 ---
 
 ## Prerequisites
@@ -13,11 +13,11 @@ Before you begin, make sure you have:
 
 ## Installation
 
-Add Shadow Agent SDK to your project's `Cargo.toml`:
+Add PiCrust to your project's `Cargo.toml`:
 
 ```toml
 [dependencies]
-shadow-agent-sdk = { path = "path/to/shadow-agent-sdk" }
+picrust = { path = "path/to/picrust" }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -42,7 +42,7 @@ Create a new file `src/main.rs` and add the following code:
 
 ```rust
 use std::sync::Arc;
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     llm::{AnthropicProvider, LlmProvider},
     runtime::AgentRuntime,
@@ -84,7 +84,7 @@ async fn main() -> anyhow::Result<()> {
     loop {
         match rx.recv().await {
             Ok(chunk) => {
-                use shadow_agent_sdk::core::OutputChunk;
+                use picrust::core::OutputChunk;
                 match chunk {
                     OutputChunk::TextDelta(text) => print!("{}", text),
                     OutputChunk::Done => break,
@@ -190,7 +190,7 @@ The agent streams output in chunks. `TextDelta` contains text tokens, `Done` sig
 Let's make the agent more useful by adding file access:
 
 ```rust
-use shadow_agent_sdk::tools::common::*;
+use picrust::tools::common::*;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -221,7 +221,7 @@ async fn main() -> anyhow::Result<()> {
     loop {
         match rx.recv().await {
             Ok(chunk) => {
-                use shadow_agent_sdk::core::OutputChunk;
+                use picrust::core::OutputChunk;
                 match chunk {
                     OutputChunk::TextDelta(text) => print!("{}", text),
                     OutputChunk::ToolStart { name, .. } => {
@@ -247,7 +247,7 @@ Now the agent can read files, write files, and execute shell commands!
 Want to use Gemini instead of Claude? Just swap the provider:
 
 ```rust
-use shadow_agent_sdk::llm::GeminiProvider;
+use picrust::llm::GeminiProvider;
 
 // Change this line:
 let llm: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
@@ -266,7 +266,7 @@ By default, tools require user permission. Handle permission requests:
 loop {
     match rx.recv().await {
         Ok(chunk) => {
-            use shadow_agent_sdk::core::OutputChunk;
+            use picrust::core::OutputChunk;
             match chunk {
                 OutputChunk::TextDelta(text) => print!("{}", text),
 
@@ -303,7 +303,7 @@ let config = AgentConfig::new("You are a helpful assistant.")
 All conversations are automatically saved to disk. View them:
 
 ```rust
-use shadow_agent_sdk::session::AgentSession;
+use picrust::session::AgentSession;
 
 // Load and display history
 let history = AgentSession::get_history("my-session")?;
@@ -320,7 +320,7 @@ Here's a complete interactive agent:
 ```rust
 use std::sync::Arc;
 use std::io::{self, Write};
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     llm::{AnthropicProvider, LlmProvider},
     runtime::AgentRuntime,
@@ -356,7 +356,7 @@ async fn main() -> anyhow::Result<()> {
     let handle = runtime.spawn(session, |internals| agent.run(internals)).await;
 
     // Interactive loop
-    println!("Shadow Agent ready! Type 'exit' to quit.\n");
+    println!("Agent ready! Type 'exit' to quit.\n");
 
     loop {
         print!("> ");

@@ -10,7 +10,7 @@ The **AgentRuntime** is the central orchestrator that manages all agent lifecycl
 ### Creating a Runtime
 
 ```rust
-use shadow_agent_sdk::runtime::AgentRuntime;
+use picrust::runtime::AgentRuntime;
 
 // Basic runtime
 let runtime = AgentRuntime::new();
@@ -36,7 +36,7 @@ The runtime handles:
 ### Basic Spawn
 
 ```rust
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     runtime::AgentRuntime,
     session::AgentSession,
@@ -355,7 +355,7 @@ let runtime = AgentRuntime::with_global_rules(vec![
 ### Adding Rules at Runtime
 
 ```rust
-use shadow_agent_sdk::permissions::{PermissionRule, PermissionScope};
+use picrust::permissions::{PermissionRule, PermissionScope};
 
 runtime.global_permissions().add_rule(
     PermissionRule::allow_tool("Grep"),

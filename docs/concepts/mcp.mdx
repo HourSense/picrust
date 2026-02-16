@@ -1,6 +1,6 @@
 ---
 title: 'Model Context Protocol'
-description: 'Integrate MCP servers with Shadow Agent SDK'
+description: 'Integrate MCP servers with PiCrust'
 ---
 
 ## What is MCP?
@@ -35,7 +35,7 @@ Model Context Protocol (MCP) is an open standard that enables AI models to secur
 Connect to an MCP server using HTTP:
 
 ```rust
-use shadow_agent_sdk::mcp::MCPClient;
+use picrust::mcp::MCPClient;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -85,7 +85,7 @@ let response = agent.execute(
 Create your own MCP server to expose custom functionality:
 
 ```rust
-use shadow_agent_sdk::mcp::{MCPServer, MCPTool};
+use picrust::mcp::{MCPServer, MCPTool};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -104,7 +104,7 @@ async fn main() -> Result<()> {
 ### Example: Database Tool
 
 ```rust
-use shadow_agent_sdk::mcp::MCPTool;
+use picrust::mcp::MCPTool;
 use async_trait::async_trait;
 
 struct DatabaseTool {
@@ -141,7 +141,7 @@ impl MCPTool for DatabaseTool {
 Configure authentication for secure MCP connections:
 
 ```rust
-use shadow_agent_sdk::mcp::{MCPClient, MCPAuth};
+use picrust::mcp::{MCPClient, MCPAuth};
 
 let auth = MCPAuth::Bearer("your-token".to_string());
 

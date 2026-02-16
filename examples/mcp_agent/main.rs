@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     cli::ConsoleRenderer,
     helpers::TodoListManager,
@@ -47,7 +47,7 @@ Be concise in your responses."#;
 async fn main() -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
-        .with_env_filter("mcp_agent=info,shadow_agent_sdk=info")
+        .with_env_filter("mcp_agent=info,picrust=info")
         .init();
 
     // Parse command line arguments

@@ -1,11 +1,11 @@
 ---
 title: 'Architecture Overview'
-description: 'Understand the high-level architecture of Shadow Agent SDK and how components work together'
+description: 'Understand the high-level architecture of PiCrust and how components work together'
 ---
 
 ## System Architecture
 
-Shadow Agent SDK is built with a clear separation of concerns, designed specifically for frontend-backend applications like Tauri desktop apps.
+PiCrust is built with a clear separation of concerns, designed specifically for frontend-backend applications like Tauri desktop apps.
 
 ```mermaid
 flowchart TB
@@ -425,7 +425,7 @@ Optimized for efficiency:
 
 ### vs. Stateless Request/Response
 
-**Shadow Agent SDK:**
+**PiCrust:**
 - Maintains conversation state
 - Session persistence
 - Multi-turn interactions
@@ -437,7 +437,7 @@ Optimized for efficiency:
 
 ### vs. Monolithic Agent
 
-**Shadow Agent SDK:**
+**PiCrust:**
 - Multiple independent agents
 - Subagent spawning
 - Runtime management
@@ -449,7 +449,7 @@ Optimized for efficiency:
 
 ### vs. Microservices
 
-**Shadow Agent SDK:**
+**PiCrust:**
 - Embedded in your application
 - Type-safe communication
 - No network overhead

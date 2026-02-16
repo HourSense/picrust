@@ -15,7 +15,7 @@ use futures::StreamExt;
 use std::env;
 use std::io::{self, Write};
 
-use shadow_agent_sdk::llm::{
+use picrust::llm::{
     AnthropicProvider, ContentBlockStart, ContentDelta, StreamEvent,
 };
 
@@ -23,7 +23,7 @@ use shadow_agent_sdk::llm::{
 async fn main() -> Result<()> {
     // Initialize logging (optional, set RUST_LOG=debug to see details)
     tracing_subscriber::fmt()
-        .with_env_filter("display_streaming=info,shadow_agent_sdk=warn")
+        .with_env_filter("display_streaming=info,picrust=warn")
         .init();
 
     println!("{}", "=== Streaming Demo ===".bold().cyan());

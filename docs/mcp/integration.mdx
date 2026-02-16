@@ -6,8 +6,8 @@ description: 'Connect to external MCP servers for dynamic tool discovery'
 ## Setup
 
 ```rust
-use shadow_agent_sdk::mcp::{MCPServerManager, MCPToolProvider};
-use shadow_agent_sdk::tools::ToolRegistry;
+use picrust::mcp::{MCPServerManager, MCPToolProvider};
+use picrust::tools::ToolRegistry;
 use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::ServiceExt;
 use std::sync::Arc;

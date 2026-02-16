@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use shadow_agent_sdk::llm::{GeminiProvider, LlmProvider, SwappableLlmProvider};
+//! use picrust::llm::{GeminiProvider, LlmProvider, SwappableLlmProvider};
 //!
 //! // Create initial provider
 //! let fast = Arc::new(GeminiProvider::new("key")?.with_model("gemini-3-flash-preview"));

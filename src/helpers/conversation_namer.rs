@@ -7,7 +7,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use shadow_agent_sdk::helpers::ConversationNamer;
+//! use picrust::helpers::ConversationNamer;
 //!
 //! // Create namer with an existing LLM provider
 //! let namer = ConversationNamer::new(&llm);

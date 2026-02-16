@@ -8,7 +8,7 @@ description: 'Pluggable LLM backends - Anthropic, Gemini, and custom providers'
 All providers implement `LlmProvider`:
 
 ```rust
-use shadow_agent_sdk::llm::{LlmProvider, AnthropicProvider, GeminiProvider};
+use picrust::llm::{LlmProvider, AnthropicProvider, GeminiProvider};
 
 let anthropic: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
 let gemini: Arc<dyn LlmProvider> = Arc::new(GeminiProvider::from_env()?);
@@ -19,7 +19,7 @@ let agent = StandardAgent::new(config, anthropic);
 ## AnthropicProvider
 
 ```rust
-use shadow_agent_sdk::llm::AnthropicProvider;
+use picrust::llm::AnthropicProvider;
 
 // From env vars (ANTHROPIC_API_KEY, ANTHROPIC_MODEL)
 let llm = AnthropicProvider::from_env()?;
@@ -36,7 +36,7 @@ let llm = AnthropicProvider::from_env()?
 ### Auth Refresh
 
 ```rust
-use shadow_agent_sdk::llm::{AuthProvider, AuthConfig};
+use picrust::llm::{AuthProvider, AuthConfig};
 
 struct MyAuthProvider;
 
@@ -54,7 +54,7 @@ let llm = AnthropicProvider::with_auth_provider_boxed(Arc::new(MyAuthProvider));
 ## GeminiProvider
 
 ```rust
-use shadow_agent_sdk::llm::GeminiProvider;
+use picrust::llm::GeminiProvider;
 
 // From env vars (GEMINI_API_KEY, GEMINI_MODEL)
 let llm = GeminiProvider::from_env()?;
@@ -69,7 +69,7 @@ let llm = GeminiProvider::new("api-key")?
 Change LLM at runtime:
 
 ```rust
-use shadow_agent_sdk::llm::SwappableLlmProvider;
+use picrust::llm::SwappableLlmProvider;
 
 let swappable = Arc::new(SwappableLlmProvider::new(anthropic_provider));
 
@@ -85,7 +85,7 @@ swappable.swap(gemini_provider).await;
 Supported by both AnthropicProvider and GeminiProvider:
 
 ```rust
-use shadow_agent_sdk::llm::ThinkingConfig;
+use picrust::llm::ThinkingConfig;
 
 let config = AgentConfig::new("...")
     .with_thinking(16000);  // Budget in tokens
@@ -112,7 +112,7 @@ The conversion is automatic based on the model name, so you use the same API for
 ## Message Types
 
 ```rust
-use shadow_agent_sdk::llm::{Message, ContentBlock};
+use picrust::llm::{Message, ContentBlock};
 
 let msg = Message::user("Hello");
 let msg = Message::assistant("Hi");

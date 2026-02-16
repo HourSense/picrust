@@ -12,12 +12,12 @@ The SDK includes built-in tools that cover common agent operations:
 - **Task Management**: TodoWrite
 - **User Interaction**: AskUserQuestion
 
-All built-in tools are available in the `shadow_agent_sdk::tools::common` module.
+All built-in tools are available in the `picrust::tools::common` module.
 
 ## Registering Built-in Tools
 
 ```rust
-use shadow_agent_sdk::tools::{ToolRegistry, common::*};
+use picrust::tools::{ToolRegistry, common::*};
 use std::sync::Arc;
 
 let mut tools = ToolRegistry::new();

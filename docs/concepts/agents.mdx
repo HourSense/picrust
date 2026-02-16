@@ -1,11 +1,11 @@
 ---
 title: 'Agents'
-description: 'Understanding the agent architecture in Shadow Agent SDK'
+description: 'Understanding the agent architecture in PiCrust'
 ---
 
 ## What is an Agent?
 
-An agent is an autonomous entity that can understand natural language instructions, make decisions, and use tools to accomplish tasks. In Shadow Agent SDK, agents are the core building blocks of your agentic applications.
+An agent is an autonomous entity that can understand natural language instructions, make decisions, and use tools to accomplish tasks. In PiCrust, agents are the core building blocks of your agentic applications.
 
 ## Agent Lifecycle
 
@@ -42,7 +42,7 @@ An agent is an autonomous entity that can understand natural language instructio
 Configure agent behavior with various options:
 
 ```rust
-use shadow_agent_sdk::{Agent, AgentConfig};
+use picrust::{Agent, AgentConfig};
 
 let config = AgentConfig {
     model: "claude-3-5-sonnet-20241022",

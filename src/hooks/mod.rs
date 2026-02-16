@@ -17,7 +17,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use shadow_agent_sdk::hooks::{HookRegistry, HookEvent, HookResult};
+//! use picrust::hooks::{HookRegistry, HookEvent, HookResult};
 //!
 //! let mut hooks = HookRegistry::new();
 //!

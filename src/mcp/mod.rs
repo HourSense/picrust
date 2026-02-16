@@ -17,7 +17,7 @@
 //! For servers requiring JWT tokens that expire:
 //!
 //! ```ignore
-//! use shadow_agent_sdk::mcp::{MCPServerManager, MCPToolProvider};
+//! use picrust::mcp::{MCPServerManager, MCPToolProvider};
 //! use rmcp::transport::StreamableHttpClientTransport;
 //! use rmcp::ServiceExt;
 //! use std::sync::Arc;
@@ -76,7 +76,7 @@
 //! For servers with static auth (no token refresh):
 //!
 //! ```ignore
-//! use shadow_agent_sdk::mcp::{MCPServerManager, MCPToolProvider};
+//! use picrust::mcp::{MCPServerManager, MCPToolProvider};
 //! use rmcp::transport::StreamableHttpClientTransport;
 //! use rmcp::ServiceExt;
 //! use std::sync::Arc;
@@ -101,7 +101,7 @@
 //! For simple cases without auth:
 //!
 //! ```ignore
-//! use shadow_agent_sdk::mcp::{MCPServerManager, MCPServerConfig, MCPToolProvider};
+//! use picrust::mcp::{MCPServerManager, MCPServerConfig, MCPToolProvider};
 //!
 //! let mcp_manager = Arc::new(MCPServerManager::new());
 //! mcp_manager.add_server(MCPServerConfig::new(

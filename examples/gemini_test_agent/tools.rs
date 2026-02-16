@@ -1,7 +1,7 @@
 //! Tool setup for the Gemini test agent
 
 use anyhow::Result;
-use shadow_agent_sdk::tools::{BashTool, ReadTool, TodoWriteTool, ToolRegistry, WriteTool, GrepTool, GlobTool, EditTool, AskUserQuestionTool};
+use picrust::tools::{BashTool, ReadTool, TodoWriteTool, ToolRegistry, WriteTool, GrepTool, GlobTool, EditTool, AskUserQuestionTool};
 
 /// Create a tool registry with standard tools
 pub fn create_registry() -> Result<ToolRegistry> {

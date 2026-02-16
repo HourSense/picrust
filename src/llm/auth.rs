@@ -7,7 +7,7 @@
 //! # Example: Dynamic auth with JWT refresh
 //!
 //! ```ignore
-//! use shadow_agent_sdk::llm::{AnthropicProvider, AuthConfig};
+//! use picrust::llm::{AnthropicProvider, AuthConfig};
 //!
 //! let llm = AnthropicProvider::with_auth_provider(|| async {
 //!     // Fetch fresh JWT from your auth service

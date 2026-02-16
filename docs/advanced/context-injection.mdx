@@ -6,11 +6,11 @@ description: 'Modify messages before each LLM call'
 ## Basic Injection
 
 ```rust
-use shadow_agent_sdk::helpers::{ContextInjection, InjectionChain, FnInjection};
+use picrust::helpers::{ContextInjection, InjectionChain, FnInjection};
 
 let injection = FnInjection::new("add_timestamp", |internals, messages| {
     let timestamp = chrono::Utc::now().to_rfc3339();
-    shadow_agent_sdk::helpers::inject_system_reminder(
+    picrust::helpers::inject_system_reminder(
         messages,
         &format!("Current time: {}", timestamp),
     );
@@ -41,7 +41,7 @@ let config = AgentConfig::new("...").with_injection_chain(chain);
 ## Helper Functions
 
 ```rust
-use shadow_agent_sdk::helpers::{
+use picrust::helpers::{
     prepend_to_first_user_message,
     append_to_last_message,
     inject_system_reminder,

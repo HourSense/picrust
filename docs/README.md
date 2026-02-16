@@ -1,4 +1,4 @@
-# Shadow Agent SDK
+# PiCrust
 
 A Rust framework for building AI agents with Claude. Designed for applications that need to spawn, manage, and communicate with autonomous agents - particularly suited for Tauri apps and other frontend-backend architectures.
 
@@ -36,7 +36,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-shadow-agent-sdk = { path = "path/to/shadow-agent-sdk" }
+picrust = { path = "path/to/picrust" }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1.0"
 ```
@@ -45,7 +45,7 @@ anyhow = "1.0"
 
 ```rust
 use std::sync::Arc;
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     llm::{AnthropicProvider, LlmProvider},
     runtime::AgentRuntime,
@@ -87,7 +87,7 @@ async fn main() -> anyhow::Result<()> {
     loop {
         match rx.recv().await {
             Ok(chunk) => {
-                use shadow_agent_sdk::core::OutputChunk;
+                use picrust::core::OutputChunk;
                 match chunk {
                     OutputChunk::TextDelta(text) => print!("{}", text),
                     OutputChunk::Done => break,
@@ -970,8 +970,8 @@ MCP is an open protocol that standardizes how AI applications connect to externa
 **1. Basic Setup (No Auth)**
 
 ```rust
-use shadow_agent_sdk::mcp::{MCPServerManager, MCPToolProvider};
-use shadow_agent_sdk::tools::ToolRegistry;
+use picrust::mcp::{MCPServerManager, MCPToolProvider};
+use picrust::tools::ToolRegistry;
 use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::ServiceExt;
 use std::sync::Arc;
@@ -1094,7 +1094,7 @@ The double underscore (`__`) is used because Anthropic's API only allows `[a-zA-
 #### Complete Example
 
 ```rust
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     llm::AnthropicProvider,
     mcp::{MCPServerManager, MCPToolProvider},
@@ -1378,7 +1378,7 @@ The runtime manages agent lifecycles and provides handles for communication.
 #### AgentRuntime
 
 ```rust
-use shadow_agent_sdk::runtime::AgentRuntime;
+use picrust::runtime::AgentRuntime;
 
 // Create runtime
 let runtime = AgentRuntime::new();
@@ -1414,8 +1414,8 @@ runtime.shutdown_all().await;
 #### AgentHandle
 
 ```rust
-use shadow_agent_sdk::runtime::AgentHandle;
-use shadow_agent_sdk::core::OutputChunk;
+use picrust::runtime::AgentHandle;
+use picrust::core::OutputChunk;
 
 // Send input
 handle.send_input("Write hello world").await?;
@@ -1474,7 +1474,7 @@ Sessions persist conversation history and metadata.
 #### AgentSession
 
 ```rust
-use shadow_agent_sdk::session::{AgentSession, SessionStorage};
+use picrust::session::{AgentSession, SessionStorage};
 
 // Create new session (auto-persists to ./sessions/{id}/)
 let session = AgentSession::new(
@@ -1618,7 +1618,7 @@ Tools extend agent capabilities with custom actions.
 #### Built-in Tools
 
 ```rust
-use shadow_agent_sdk::tools::{ToolRegistry, common::*};
+use picrust::tools::{ToolRegistry, common::*};
 
 let mut tools = ToolRegistry::new();
 
@@ -1642,9 +1642,9 @@ let tools = Arc::new(tools);
 
 ```rust
 use async_trait::async_trait;
-use shadow_agent_sdk::tools::{Tool, ToolResult, ToolInfo};
-use shadow_agent_sdk::llm::{ToolDefinition, types::CustomTool};
-use shadow_agent_sdk::runtime::AgentInternals;
+use picrust::tools::{Tool, ToolResult, ToolInfo};
+use picrust::llm::{ToolDefinition, types::CustomTool};
+use picrust::runtime::AgentInternals;
 use serde_json::{json, Value};
 
 pub struct WeatherTool;
@@ -1663,7 +1663,7 @@ impl Tool for WeatherTool {
         ToolDefinition::Custom(CustomTool {
             name: self.name().to_string(),
             description: Some(self.description().to_string()),
-            input_schema: shadow_agent_sdk::llm::types::ToolInputSchema {
+            input_schema: picrust::llm::types::ToolInputSchema {
                 schema_type: "object".to_string(),
                 properties: Some(json!({
                     "location": {
@@ -1792,7 +1792,7 @@ Check order: Session → Local → Global → Ask User (if interactive)
 #### Permission Rules
 
 ```rust
-use shadow_agent_sdk::permissions::{PermissionRule, PermissionScope};
+use picrust::permissions::{PermissionRule, PermissionScope};
 
 // Allow entire tool
 let rule = PermissionRule::allow_tool("Read");
@@ -1921,7 +1921,7 @@ Intercept and modify agent behavior at key points.
 #### Hook Events
 
 ```rust
-use shadow_agent_sdk::hooks::{HookRegistry, HookEvent, HookContext, HookResult};
+use picrust::hooks::{HookRegistry, HookEvent, HookContext, HookResult};
 
 let mut hooks = HookRegistry::new();
 
@@ -2086,7 +2086,7 @@ The SDK provides a pluggable LLM provider architecture, allowing you to use diff
 All providers implement the `LlmProvider` trait:
 
 ```rust
-use shadow_agent_sdk::llm::{LlmProvider, AnthropicProvider, GeminiProvider};
+use picrust::llm::{LlmProvider, AnthropicProvider, GeminiProvider};
 
 // Create providers
 let anthropic: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
@@ -2101,7 +2101,7 @@ let agent = StandardAgent::new(config, gemini);
 #### AnthropicProvider
 
 ```rust
-use shadow_agent_sdk::llm::AnthropicProvider;
+use picrust::llm::AnthropicProvider;
 
 // From environment variables (ANTHROPIC_API_KEY, ANTHROPIC_MODEL)
 let llm = AnthropicProvider::from_env()?;
@@ -2121,7 +2121,7 @@ let llm: Arc<dyn LlmProvider> = Arc::new(llm);
 #### GeminiProvider
 
 ```rust
-use shadow_agent_sdk::llm::GeminiProvider;
+use picrust::llm::GeminiProvider;
 
 // From environment variables (GEMINI_API_KEY, GEMINI_MODEL)
 let llm = GeminiProvider::from_env()?;
@@ -2165,7 +2165,7 @@ let agent = StandardAgent::new(config, main_llm);
 For runtime model switching (e.g., fast/pro toggle in UI):
 
 ```rust
-use shadow_agent_sdk::llm::{SwappableLlmProvider, GeminiProvider, LlmProvider};
+use picrust::llm::{SwappableLlmProvider, GeminiProvider, LlmProvider};
 
 // Create initial provider
 let fast = Arc::new(GeminiProvider::new("key")?.with_model("gemini-3-flash-preview"));
@@ -2188,7 +2188,7 @@ handle.set_provider(pro).await;
 For JWT tokens, rotating keys, or proxy servers:
 
 ```rust
-use shadow_agent_sdk::llm::{AnthropicProvider, AuthConfig, AuthProvider};
+use picrust::llm::{AnthropicProvider, AuthConfig, AuthProvider};
 use async_trait::async_trait;
 
 struct MyAuthProvider {
@@ -2217,7 +2217,7 @@ let llm = AnthropicProvider::with_auth_provider(|| async {
 Extended thinking is currently supported by AnthropicProvider using Claude's extended thinking API.
 
 ```rust
-use shadow_agent_sdk::llm::ThinkingConfig;
+use picrust::llm::ThinkingConfig;
 
 let config = AgentConfig::new("You are a thoughtful assistant.")
     .with_thinking(16000);  // Budget in tokens
@@ -2230,7 +2230,7 @@ let config = AgentConfig::new("...")
 #### Message Types
 
 ```rust
-use shadow_agent_sdk::llm::{Message, MessageContent, ContentBlock};
+use picrust::llm::{Message, MessageContent, ContentBlock};
 
 // Simple text message
 let msg = Message::user("Hello");
@@ -2273,12 +2273,12 @@ Utilities for common agent patterns.
 Modify messages before each LLM call:
 
 ```rust
-use shadow_agent_sdk::helpers::{ContextInjection, InjectionChain, FnInjection};
+use picrust::helpers::{ContextInjection, InjectionChain, FnInjection};
 
 // Function-based injection
 let injection = FnInjection::new("add_timestamp", |internals, messages| {
     let timestamp = chrono::Utc::now().to_rfc3339();
-    shadow_agent_sdk::helpers::inject_system_reminder(
+    picrust::helpers::inject_system_reminder(
         messages,
         &format!("Current time: {}", timestamp),
     );
@@ -2290,7 +2290,7 @@ chain.add(injection);
 chain.add_fn("add_context", |internals, messages| {
     // Access session state
     let turn = internals.context.current_turn;
-    shadow_agent_sdk::helpers::inject_system_reminder(
+    picrust::helpers::inject_system_reminder(
         messages,
         &format!("This is turn {}", turn),
     );
@@ -2303,7 +2303,7 @@ let config = AgentConfig::new("...")
 #### Helper Functions
 
 ```rust
-use shadow_agent_sdk::helpers::{
+use picrust::helpers::{
     prepend_to_first_user_message,
     append_to_last_message,
     inject_system_reminder,
@@ -2356,7 +2356,7 @@ let config = AgentConfig::new("You are a helpful assistant")
 You can also use the helper manually:
 
 ```rust
-use shadow_agent_sdk::helpers::{ConversationNamer, generate_conversation_name};
+use picrust::helpers::{ConversationNamer, generate_conversation_name};
 
 // Using the helper struct
 let namer = ConversationNamer::new(naming_llm);
@@ -2414,7 +2414,7 @@ The namer:
 ```rust
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use shadow_agent_sdk::llm::{AnthropicProvider, LlmProvider};
+use picrust::llm::{AnthropicProvider, LlmProvider};
 
 pub struct AppState {
     pub runtime: AgentRuntime,

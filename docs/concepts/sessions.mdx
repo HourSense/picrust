@@ -10,7 +10,7 @@ The **AgentSession** manages conversation persistence. Every agent has a session
 ### Creating Sessions
 
 ```rust
-use shadow_agent_sdk::session::AgentSession;
+use picrust::session::AgentSession;
 
 // Create new session
 let session = AgentSession::new(
@@ -138,7 +138,7 @@ for message in history {
 Messages can contain various content types:
 
 ```rust
-use shadow_agent_sdk::llm::{Message, ContentBlock};
+use picrust::llm::{Message, ContentBlock};
 
 // Simple text
 let msg = Message::user("Hello");
@@ -387,7 +387,7 @@ metadata.set_custom("key", "value");
 When agent is not running, direct access is safe:
 
 ```rust
-use shadow_agent_sdk::session::SessionStorage;
+use picrust::session::SessionStorage;
 
 let mut metadata = SessionStorage::default().load_metadata("session-id")?;
 metadata.set_custom("key", "value");
@@ -399,7 +399,7 @@ SessionStorage::default().save_metadata(&metadata)?;
 ### Change Storage Directory
 
 ```rust
-use shadow_agent_sdk::session::SessionStorage;
+use picrust::session::SessionStorage;
 
 // Use custom directory
 let storage = SessionStorage::with_dir("/custom/path/sessions");

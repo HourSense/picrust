@@ -1,6 +1,6 @@
 ---
 title: 'Tauri Integration'
-description: 'Build desktop apps with Shadow Agent SDK and Tauri'
+description: 'Build desktop apps with PiCrust and Tauri'
 ---
 
 ## Backend State
@@ -8,7 +8,7 @@ description: 'Build desktop apps with Shadow Agent SDK and Tauri'
 ```rust
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use shadow_agent_sdk::llm::{AnthropicProvider, LlmProvider};
+use picrust::llm::{AnthropicProvider, LlmProvider};
 
 pub struct AppState {
     pub runtime: AgentRuntime,

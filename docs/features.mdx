@@ -1,15 +1,15 @@
 ---
 title: 'Features'
-description: 'Explore the powerful features of Shadow Agent SDK'
+description: 'Explore the powerful features of PiCrust'
 ---
 
 ## Overview
 
-Shadow Agent SDK provides a comprehensive set of features for building intelligent, autonomous agents.
+PiCrust provides a comprehensive set of features for building intelligent, autonomous agents.
 
 ## Multi-LLM Provider Support
 
-Shadow Agent SDK supports multiple LLM providers out of the box:
+PiCrust supports multiple LLM providers out of the box:
 
 <AccordionGroup>
   <Accordion icon="brain" title="Claude (Anthropic)">
@@ -57,7 +57,7 @@ Agents can use various tools to interact with their environment:
 </Card>
 
 ```rust
-use shadow_agent_sdk::mcp::MCPClient;
+use picrust::mcp::MCPClient;
 
 // Connect to an MCP server
 let mcp = MCPClient::connect("http://localhost:3000").await?;

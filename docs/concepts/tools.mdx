@@ -1,11 +1,11 @@
 ---
 title: 'Tools'
-description: 'Built-in and custom tools for Shadow Agent SDK'
+description: 'Built-in and custom tools for PiCrust'
 ---
 
 ## Overview
 
-Tools enable agents to interact with their environment, perform actions, and access external resources. Shadow Agent SDK comes with a comprehensive set of built-in tools.
+Tools enable agents to interact with their environment, perform actions, and access external resources. PiCrust comes with a comprehensive set of built-in tools.
 
 ## Built-in Tools
 
@@ -78,7 +78,7 @@ When an agent receives a task, it:
 Build your own tools by implementing the `Tool` trait:
 
 ```rust
-use shadow_agent_sdk::{Tool, ToolResult};
+use picrust::{Tool, ToolResult};
 use async_trait::async_trait;
 use serde_json::Value;
 
@@ -183,7 +183,7 @@ agent.add_tool(CustomTool);
 ### Example: File Analysis
 
 ```rust
-use shadow_agent_sdk::{Agent, tools::*};
+use picrust::{Agent, tools::*};
 
 #[tokio::main]
 async fn main() -> Result<()> {

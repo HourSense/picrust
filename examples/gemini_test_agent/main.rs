@@ -15,7 +15,7 @@ use anyhow::Result;
 use std::env;
 use std::sync::Arc;
 
-use shadow_agent_sdk::{
+use picrust::{
     agent::{AgentConfig, StandardAgent},
     cli::ConsoleRenderer,
     hooks::{HookContext, HookEvent, HookRegistry, HookResult},
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             env::var("RUST_LOG")
-                .unwrap_or_else(|_| "gemini_test_agent=info,shadow_agent_sdk=info".to_string()),
+                .unwrap_or_else(|_| "gemini_test_agent=info,picrust=info".to_string()),
         )
         .init();
 
@@ -159,7 +159,7 @@ async fn main() -> Result<()> {
         loop {
             match output_rx.recv().await {
                 Ok(chunk) => {
-                    use shadow_agent_sdk::core::OutputChunk;
+                    use picrust::core::OutputChunk;
                     match chunk {
                         OutputChunk::TextDelta(text) => {
                             print!("{}", text);
@@ -176,7 +176,7 @@ async fn main() -> Result<()> {
                         }
                         OutputChunk::ToolEnd { id: _, result } => {
                             let result_text = match &result.content {
-                                shadow_agent_sdk::tools::ToolResultData::Text(t) => t.clone(),
+                                picrust::tools::ToolResultData::Text(t) => t.clone(),
                                 _ => "(non-text result)".to_string(),
                             };
                             let truncated = if result_text.len() > 200 {

@@ -114,7 +114,7 @@ const regex = /<vibe-work-attachment>(.*?)<\/vibe-work-attachment>/g;
 ## Programmatic Access
 
 ```rust
-use shadow_agent_sdk::helpers::process_attachments;
+use picrust::helpers::process_attachments;
 
 let user_input = "Analyze <vibe-work-attachment>./file.txt</vibe-work-attachment>";
 let processed_message = process_attachments(user_input)?;

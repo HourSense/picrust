@@ -78,8 +78,8 @@ You can inspect these blocks to understand what the assistant is doing.
 Track all assistant responses for debugging, analytics, or audit purposes:
 
 ```rust
-use shadow_agent_sdk::hooks::{HookRegistry, HookEvent, HookResult};
-use shadow_agent_sdk::llm::ContentBlock;
+use picrust::hooks::{HookRegistry, HookEvent, HookResult};
+use picrust::llm::ContentBlock;
 
 let mut hooks = HookRegistry::new();
 
@@ -299,8 +299,8 @@ hooks.add(HookEvent::PostAssistantResponse, |ctx| {
 Add the hooks to your agent configuration:
 
 ```rust
-use shadow_agent_sdk::agent::AgentConfig;
-use shadow_agent_sdk::hooks::{HookRegistry, HookEvent, HookResult};
+use picrust::agent::AgentConfig;
+use picrust::hooks::{HookRegistry, HookEvent, HookResult};
 
 // Create hook registry
 let mut hooks = HookRegistry::new();
@@ -354,9 +354,9 @@ The `stop_reason` field tells you why the LLM stopped generating:
 Here's a complete example that combines multiple use cases:
 
 ```rust
-use shadow_agent_sdk::agent::{AgentConfig, StandardAgent};
-use shadow_agent_sdk::hooks::{HookRegistry, HookEvent, HookResult};
-use shadow_agent_sdk::llm::{ContentBlock, StopReason};
+use picrust::agent::{AgentConfig, StandardAgent};
+use picrust::hooks::{HookRegistry, HookEvent, HookResult};
+use picrust::llm::{ContentBlock, StopReason};
 
 fn create_agent_with_monitoring() -> StandardAgent {
     let mut hooks = HookRegistry::new();

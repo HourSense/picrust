@@ -1,6 +1,6 @@
 # MCP Agent Example
 
-This example demonstrates how to integrate MCP (Model Context Protocol) servers with the Shadow Agent Framework.
+This example demonstrates how to integrate MCP (Model Context Protocol) servers with the PiCrust.
 
 ## Prerequisites
 

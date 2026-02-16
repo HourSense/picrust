@@ -2,7 +2,7 @@
   <img src="picrust.png" alt="PiCrust" width="200" />
 </p>
 
-<h1 align="center">PiCrust</h1>
+<h1 align="center">PiCrust: Pi, but in Rust </h1>
 
 <p align="center">
   <strong><a href="https://github.com/openagentsinc/openagents/tree/main/packages/pi">Pi</a>, but in Rust</strong><br>

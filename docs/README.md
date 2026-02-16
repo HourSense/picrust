@@ -1,30 +1,29 @@
-# PiCrust
+<p align="center">
+  <img src="picrust.png" alt="PiCrust" width="200" />
+</p>
 
-A Rust framework for building AI agents with Claude. Designed for applications that need to spawn, manage, and communicate with autonomous agents - particularly suited for Tauri apps and other frontend-backend architectures.
+<h1 align="center">PiCrust</h1>
 
-## Table of Contents
+<p align="center">
+  <strong>A Rust framework for building AI agents with Claude</strong><br>
+  Designed for applications that need to spawn, manage, and communicate with autonomous agents — particularly suited for Tauri apps and other frontend-backend architectures.
+</p>
 
-1. [Quick Start](#quick-start)
-2. [Core Concepts](#core-concepts)
-3. [Key Features](#key-features)
-   - [Prompt Caching](#prompt-caching)
-   - [Streaming and History](#streaming-and-history)
-   - [Image and PDF Support](#image-and-pdf-support)
-   - [Attachment Support](#attachment-support)
-   - [Ask User Questions](#ask-user-questions)
-   - [Interrupt Handling](#interrupt-handling)
-   - [MCP Integration](#mcp-model-context-protocol-integration)
-4. [Module Reference](#module-reference)
-   - [Runtime](#runtime-module)
-   - [Session](#session-module)
-   - [Tools](#tools-module)
-   - [Permissions](#permissions-module)
-   - [Hooks](#hooks-module)
-   - [LLM Provider](#llm-module)
-   - [Helpers](#helpers-module)
-5. [Building a Frontend Integration](#building-a-frontend-integration)
-6. [Examples](#examples)
-7. [API Reference](#api-reference)
+<p align="center">
+  <a href="https://github.com/HourSense/picrust/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" /></a>
+  <a href="https://crates.io/crates/picrust"><img src="https://img.shields.io/crates/v/picrust.svg" alt="Crates.io" /></a>
+  <a href="https://docs.rs/picrust"><img src="https://img.shields.io/docsrs/picrust" alt="docs.rs" /></a>
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#core-concepts">Core Concepts</a> •
+  <a href="#key-features">Key Features</a> •
+  <a href="#module-reference">Module Reference</a> •
+  <a href="#building-a-frontend-integration">Frontend Integration</a> •
+  <a href="#examples">Examples</a> •
+  <a href="#api-reference">API Reference</a>
+</p>
 
 ---
 

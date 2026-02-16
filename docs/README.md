@@ -5,8 +5,8 @@
 <h1 align="center">PiCrust</h1>
 
 <p align="center">
-  <strong><a href="https://github.com/openagentsinc/openagents/tree/main/packages/pi">Pi</a>, rewritten in Rust for AI employees</strong><br>
-  The agent loop that powers OpenClaw, rebuilt with parallel runtimes, native binaries, and structured permissions for autonomous agents that run unsupervised.
+  <strong><a href="https://github.com/openagentsinc/openagents/tree/main/packages/pi">Pi</a>, but in Rust</strong><br>
+  The agent loop that powers OpenClaw, with parallel runtimes, native binaries, and structured permissions.
 </p>
 
 <p align="center">

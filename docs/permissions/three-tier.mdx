@@ -9,14 +9,14 @@ The SDK uses a three-tier permission system to control tool access. Rules are ch
 
 ```mermaid
 flowchart TB
-    S["Session Rules\nHighest priority, in-memory only"]
-    L["Local Rules\nAgent-type specific, persisted to disk"]
-    G["Global Rules\nAll agents, persisted to disk"]
-    U["Ask User\n(if interactive)"]
+    S["Session Rules<br/>Highest priority, in-memory only"]
+    L["Local Rules<br/>Agent-type specific, persisted to disk"]
+    G["Global Rules<br/>All agents, persisted to disk"]
+    U["Ask User<br/>(if interactive)"]
 
-    S -- "no match" --> L
-    L -- "no match" --> G
-    G -- "no match" --> U
+    S --> L
+    L --> G
+    G --> U
 ```
 
 ## The Three Tiers

@@ -1,0 +1,83 @@
+/* Custom Mermaid diagram styling - minimal and clean */
+
+/* ===== DARK MODE ===== */
+
+/* Node styling - transparent backgrounds */
+.dark .mermaid .node rect,
+.dark .mermaid .node circle,
+.dark .mermaid .node ellipse,
+.dark .mermaid .node polygon {
+  fill: transparent !important;
+  stroke: #6b7280 !important;
+  stroke-width: 2px !important;
+}
+
+.dark .mermaid .node text,
+.dark .mermaid .nodeLabel {
+  fill: #e5e7eb !important;
+  color: #e5e7eb !important;
+}
+
+/* Arrows */
+.dark .mermaid .edgePath .path {
+  stroke: #6b7280 !important;
+  stroke-width: 2px !important;
+}
+
+.dark .mermaid marker {
+  fill: #6b7280 !important;
+  stroke: #6b7280 !important;
+}
+
+/* Subgraphs */
+.dark .mermaid .cluster rect {
+  fill: transparent !important;
+  stroke: #4b5563 !important;
+  stroke-width: 1px !important;
+  stroke-dasharray: 5, 5 !important;
+}
+
+.dark .mermaid .cluster text {
+  fill: #d1d5db !important;
+}
+
+/* ===== LIGHT MODE ===== */
+
+/* Node styling - transparent backgrounds */
+.mermaid .node rect,
+.mermaid .node circle,
+.mermaid .node ellipse,
+.mermaid .node polygon {
+  fill: transparent !important;
+  stroke: #4b5563 !important;
+  stroke-width: 2px !important;
+}
+
+.mermaid .node text,
+.mermaid .nodeLabel {
+  fill: #1f2937 !important;
+  color: #1f2937 !important;
+}
+
+/* Arrows */
+.mermaid .edgePath .path {
+  stroke: #4b5563 !important;
+  stroke-width: 2px !important;
+}
+
+.mermaid marker {
+  fill: #4b5563 !important;
+  stroke: #4b5563 !important;
+}
+
+/* Subgraphs */
+.mermaid .cluster rect {
+  fill: transparent !important;
+  stroke: #9ca3af !important;
+  stroke-width: 1px !important;
+  stroke-dasharray: 5, 5 !important;
+}
+
+.mermaid .cluster text {
+  fill: #374151 !important;
+}

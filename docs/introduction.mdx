@@ -145,13 +145,13 @@ Unlike simple chatbot libraries, PiCrust is designed for **real applications**:
 
 ```mermaid
 flowchart TB
-    App["Your Application\n(Tauri, CLI, Web Server, etc.)"]
-    Runtime["AgentRuntime\nSpawns and manages agent tasks\nMaintains registry of running agents\nShares global permissions across agents"]
-    Handle["AgentHandle\nExternal interface for communication\nsend_input, subscribe, state\nCloneable, shareable across threads"]
-    Agent["StandardAgent\nAgent Loop: Receive - Inject Context - Call LLM -\nParse Response - Execute Tools - Send Output - Repeat"]
+    App["Your Application<br/>(Tauri, CLI, Web Server, etc.)"]
+    Runtime["AgentRuntime<br/>Spawns and manages agent tasks<br/>Maintains registry of running agents<br/>Shares global permissions across agents"]
+    Handle["AgentHandle<br/>External interface for communication<br/>send_input, subscribe, state<br/>Cloneable, shareable across threads"]
+    Agent["StandardAgent<br/>Agent Loop: Receive - Inject Context - Call LLM -<br/>Parse Response - Execute Tools - Send Output - Repeat"]
 
     App --> Runtime
-    Runtime -- "spawn()" --> Handle
+    Runtime --> Handle
     Handle --> Agent
 ```
 

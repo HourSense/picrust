@@ -20,9 +20,9 @@ PiCrust uses a **dual-channel** approach for conversation data:
 ```mermaid
 flowchart LR
     Output["Agent Output"]
-    Stream["Stream Channel\n(ephemeral)"]
-    Disk["Disk Storage\n(durable)"]
-    Subs["Subscribers\n(UI, Logger, etc.)"]
+    Stream["Stream Channel<br/>(ephemeral)"]
+    Disk["Disk Storage<br/>(durable)"]
+    Subs["Subscribers<br/>(UI, Logger, etc.)"]
     History["history.json"]
 
     Output --> Stream --> Subs

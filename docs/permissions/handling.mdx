@@ -11,7 +11,7 @@ When an agent wants to use a tool that requires permission and no rule grants ac
 
 ```mermaid
 flowchart TB
-    A["Agent wants to use tool"] --> B["Check permission rules\n(Session -> Local -> Global)"]
+    A["Agent wants to use tool"] --> B["Check permission rules<br/>(Session -> Local -> Global)"]
     B --> C["No match found"]
     C --> D["Emit OutputChunk::PermissionRequest"]
     D --> E["Frontend shows dialog"]

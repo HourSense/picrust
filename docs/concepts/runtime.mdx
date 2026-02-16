@@ -367,14 +367,14 @@ runtime.global_permissions().add_rule(
 
 ```mermaid
 flowchart TB
-    S["Session Rules\n(highest priority, per-agent)"]
-    L["Local Rules\n(agent-type specific)"]
-    G["Global Rules\n(all agents)"]
-    U["Ask User\n(interactive)"]
+    S["Session Rules<br/>(highest priority, per-agent)"]
+    L["Local Rules<br/>(agent-type specific)"]
+    G["Global Rules<br/>(all agents)"]
+    U["Ask User<br/>(interactive)"]
 
-    S -- "no match" --> L
-    L -- "no match" --> G
-    G -- "no match" --> U
+    S --> L
+    L --> G
+    G --> U
 ```
 
 ## Error Handling

@@ -9,30 +9,30 @@ PiCrust is built with a clear separation of concerns, designed specifically for 
 
 ```mermaid
 flowchart TB
-    App["Your Application\n(Tauri Frontend, CLI, Web Server)\nChat UI / Permission dialogs / Session management"]
+    App["Your Application<br/>(Tauri Frontend, CLI, Web Server)<br/>Chat UI / Permission dialogs / Session management"]
 
-    App -- "IPC / Commands" --> Runtime
+    App --> Runtime
 
-    Runtime["AgentRuntime\nSpawns agent tasks\nMaintains agent registry\nShares global permissions\nThread-safe, cloneable"]
+    Runtime["AgentRuntime<br/>Spawns agent tasks<br/>Maintains agent registry<br/>Shares global permissions<br/>Thread-safe, cloneable"]
 
-    Runtime -- "spawn()" --> Handle
+    Runtime --> Handle
 
-    Handle["AgentHandle\nsend_input / subscribe\nsend_permission_response\nstate / interrupt / shutdown\nCloneable, shareable across threads"]
+    Handle["AgentHandle<br/>send_input / subscribe<br/>send_permission_response<br/>state / interrupt / shutdown<br/>Cloneable, shareable across threads"]
 
-    Handle -- "Broadcast channels" --> Agent
+    Handle --> Agent
 
     subgraph Agent["StandardAgent"]
         direction TB
-        Loop["Agent Loop:\n1. Receive input from handle\n2. Inject context\n3. Call LLM (with prompt caching)\n4. Parse response\n5. Execute tools (with permissions and hooks)\n6. Send output chunks to subscribers\n7. Save to session history\n8. Repeat until done"]
+        Loop["Agent Loop:<br/>1. Receive input from handle<br/>2. Inject context<br/>3. Call LLM (with prompt caching)<br/>4. Parse response<br/>5. Execute tools (with permissions and hooks)<br/>6. Send output chunks to subscribers<br/>7. Save to session history<br/>8. Repeat until done"]
         subgraph Components
             direction LR
-            Tools["Tools\nRegistry"]
-            Perms["Permissions\nManager"]
-            Hooks["Hooks\nRegistry"]
-            Session["Session\n(Disk)"]
-            LLM["LLM\nProvider"]
-            Context["Context\nInjection"]
-            Debug["Debugger\n(Optional)"]
+            Tools["Tools<br/>Registry"]
+            Perms["Permissions<br/>Manager"]
+            Hooks["Hooks<br/>Registry"]
+            Session["Session<br/>(Disk)"]
+            LLM["LLM<br/>Provider"]
+            Context["Context<br/>Injection"]
+            Debug["Debugger<br/>(Optional)"]
         end
     end
 ```
@@ -150,10 +150,10 @@ flowchart TB
     User["User / Frontend"]
     Handle["AgentHandle"]
     Agent["StandardAgent"]
-    Steps["1. Process attachments\n2. Add to history\n3. Inject context\n4. Call LLM"]
+    Steps["1. Process attachments<br/>2. Add to history<br/>3. Inject context<br/>4. Call LLM"]
 
-    User -- "send_input('Hello')" --> Handle
-    Handle -- "InputMessage::UserInput" --> Agent
+    User --> Handle
+    Handle --> Agent
     Agent --> Steps
 ```
 
@@ -163,11 +163,11 @@ flowchart TB
 flowchart TB
     Agent["StandardAgent"]
     BC["Broadcast Channel"]
-    S1["Subscriber 1 (Frontend)"]
-    S2["Subscriber 2 (Logger)"]
+    S1["Subscriber 1<br/>(Frontend)"]
+    S2["Subscriber 2<br/>(Logger)"]
     SN["Subscriber N"]
 
-    Agent -- "OutputChunk" --> BC
+    Agent --> BC
     BC --> S1
     BC --> S2
     BC --> SN

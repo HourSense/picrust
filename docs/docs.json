@@ -137,5 +137,8 @@
   },
   "contextual": {
     "options": ["copy", "view"]
+  },
+  "styling": {
+    "customCss": ["/styles.css"]
   }
 }

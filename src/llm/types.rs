@@ -326,6 +326,11 @@ pub enum ContentBlock {
         id: String,
         name: String,
         input: Value,
+        /// Thought signature (Gemini-specific, used for Gemini 3 models to maintain context)
+        /// This field is optional and only populated when using Gemini models with thinking.
+        /// It's automatically skipped during serialization if None, so it won't affect other providers.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
     },
 
     /// Tool result from the user
@@ -393,6 +398,22 @@ impl ContentBlock {
             id: id.into(),
             name: name.into(),
             input,
+            signature: None,
+        }
+    }
+
+    /// Create a tool use content block with a thought signature (Gemini-specific)
+    pub fn tool_use_with_signature(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        input: Value,
+        signature: String,
+    ) -> Self {
+        ContentBlock::ToolUse {
+            id: id.into(),
+            name: name.into(),
+            input,
+            signature: Some(signature),
         }
     }
 
@@ -470,7 +491,7 @@ impl ContentBlock {
     /// Get the tool use info if this is a tool use block
     pub fn as_tool_use(&self) -> Option<(&str, &str, &Value)> {
         match self {
-            ContentBlock::ToolUse { id, name, input } => Some((id.as_str(), name.as_str(), input)),
+            ContentBlock::ToolUse { id, name, input, .. } => Some((id.as_str(), name.as_str(), input)),
             _ => None,
         }
     }
@@ -892,7 +913,14 @@ pub enum ContentBlockStart {
     Text { text: String },
     /// Tool use block start
     #[serde(rename = "tool_use")]
-    ToolUse { id: String, name: String, input: Value },
+    ToolUse {
+        id: String,
+        name: String,
+        input: Value,
+        /// Thought signature (Gemini-specific)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
+    },
     /// Thinking block start
     #[serde(rename = "thinking")]
     Thinking { thinking: String },

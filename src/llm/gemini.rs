@@ -22,13 +22,11 @@ use futures::StreamExt;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
 use std::env;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::AsyncBufReadExt;
-use tokio::sync::Mutex;
 use tokio_util::io::StreamReader;
 
 use super::auth::{auth_provider, AuthConfig, AuthProvider, AuthSource};
@@ -235,10 +233,6 @@ pub struct GeminiProvider {
     model: String,
     max_tokens: u32,
     api_base: String,
-    /// Cache of thought signatures for Gemini 3 function calling.
-    /// Maps tool_use_id -> thought_signature.
-    /// Gemini 3 requires thought signatures to be sent back with function calls.
-    thought_signatures: Arc<Mutex<HashMap<String, String>>>,
 }
 
 impl GeminiProvider {
@@ -271,7 +265,6 @@ impl GeminiProvider {
             model,
             max_tokens,
             api_base: DEFAULT_API_BASE.to_string(),
-            thought_signatures: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -283,7 +276,6 @@ impl GeminiProvider {
             model: "".to_string(),
             max_tokens: 8192,
             api_base: DEFAULT_API_BASE.to_string(),
-            thought_signatures: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -317,7 +309,6 @@ impl GeminiProvider {
             model: "".to_string(),
             max_tokens: 8192,
             api_base: DEFAULT_API_BASE.to_string(),
-            thought_signatures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -331,7 +322,6 @@ impl GeminiProvider {
             model: "".to_string(),
             max_tokens: 8192,
             api_base: DEFAULT_API_BASE.to_string(),
-            thought_signatures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -355,7 +345,6 @@ impl GeminiProvider {
             model: model.to_string(),
             max_tokens,
             api_base: self.api_base.clone(),
-            thought_signatures: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -473,19 +462,14 @@ impl GeminiProvider {
                                 });
                             }
                         }
-                        ContentBlock::ToolUse { id, name, input } => {
-                            // Look up cached thought signature for this tool call
-                            let sig = {
-                                let sigs = self.thought_signatures.lock().await;
-                                sigs.get(id).cloned()
-                                    .or_else(|| sigs.get(&format!("name:{}", name)).cloned())
-                            };
+                        ContentBlock::ToolUse { name, input, signature, .. } => {
+                            // Signature is now stored directly in the ToolUse block
                             parts.push(GeminiPart {
                                 function_call: Some(GeminiFunctionCall {
                                     name: name.clone(),
                                     args: input.clone(),
                                 }),
-                                thought_signature: sig,
+                                thought_signature: signature.clone(),
                                 ..Default::default()
                             });
                         }
@@ -762,7 +746,7 @@ impl GeminiProvider {
 
         let content_blocks = self.convert_gemini_parts_to_blocks(
             candidate.content.as_ref().map(|c| &c.parts[..]).unwrap_or(&[]),
-        ).await;
+        );
 
         let stop_reason = candidate.finish_reason.as_deref().map(|r| match r {
             "STOP" => StopReason::EndTurn,
@@ -808,8 +792,9 @@ impl GeminiProvider {
         })
     }
 
-    /// Convert Gemini parts to internal ContentBlocks, caching thought signatures
-    async fn convert_gemini_parts_to_blocks(&self, parts: &[GeminiPart]) -> Vec<ContentBlock> {
+    /// Convert Gemini parts to internal ContentBlocks
+    /// Thought signatures are now stored directly in ToolUse blocks (not in a separate cache)
+    fn convert_gemini_parts_to_blocks(&self, parts: &[GeminiPart]) -> Vec<ContentBlock> {
         let mut blocks = Vec::new();
         let mut tool_call_counter: u32 = 0;
 
@@ -833,19 +818,19 @@ impl GeminiProvider {
                 tool_call_counter += 1;
                 let tool_id = format!("gemini_tool_{}", tool_call_counter);
 
-                // Cache thought signature for this tool call
-                if let Some(ref sig) = part.thought_signature {
-                    let mut sigs = self.thought_signatures.lock().await;
-                    sigs.insert(tool_id.clone(), sig.clone());
-                    // Also store by name for cross-reference
-                    sigs.insert(format!("name:{}", fc.name), sig.clone());
-                }
+                // Store thought signature directly in the ToolUse block
+                let block = if let Some(ref sig) = part.thought_signature {
+                    ContentBlock::tool_use_with_signature(
+                        tool_id,
+                        fc.name.clone(),
+                        fc.args.clone(),
+                        sig.clone(),
+                    )
+                } else {
+                    ContentBlock::tool_use(tool_id, fc.name.clone(), fc.args.clone())
+                };
 
-                blocks.push(ContentBlock::ToolUse {
-                    id: tool_id,
-                    name: fc.name.clone(),
-                    input: fc.args.clone(),
-                });
+                blocks.push(block);
             }
         }
 
@@ -963,7 +948,6 @@ impl GeminiProvider {
         );
         let buf_reader = tokio::io::BufReader::new(stream_reader);
         let model = self.model.clone();
-        let thought_sigs = self.thought_signatures.clone();
 
         let stream = async_stream::try_stream! {
             let mut lines = buf_reader.lines();
@@ -1122,16 +1106,10 @@ impl GeminiProvider {
 
                                     let tool_id = format!("gemini_tool_{}", chunk_index);
 
-                                    // Cache thought signature for this tool call
-                                    if let Some(ref sig) = part.thought_signature {
-                                        let mut sigs = thought_sigs.lock().await;
-                                        sigs.insert(tool_id.clone(), sig.clone());
-                                        sigs.insert(format!("name:{}", fc.name), sig.clone());
-                                    }
-
                                     let input_json = serde_json::to_string(&fc.args)
                                         .unwrap_or_else(|_| "{}".to_string());
 
+                                    // Include thought signature directly in the ContentBlockStart event
                                     yield StreamEvent::ContentBlockStart(
                                         ContentBlockStartEvent {
                                             index: 0,
@@ -1139,6 +1117,7 @@ impl GeminiProvider {
                                                 id: tool_id,
                                                 name: fc.name.clone(),
                                                 input: Value::Object(Default::default()),
+                                                signature: part.thought_signature.clone(),
                                             },
                                         }
                                     );

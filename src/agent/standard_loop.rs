@@ -357,12 +357,37 @@ impl StandardAgent {
                 stop_reason
             );
 
+            // Check for empty response (loop prevention)
+            if content_blocks.is_empty() {
+                tracing::warn!("[StandardAgent] Model returned empty response with no tool calls");
+                internals.send_status("Model returned empty response");
+                break;
+            }
+
             // Process tool use blocks and execute tools
             let mut tool_results: Vec<(String, ToolResult)> = Vec::new();
 
+            // Track recent tool calls for loop detection
+            let mut tool_call_set = std::collections::HashSet::new();
+
             for (index, block) in content_blocks.iter().enumerate() {
-                if let ContentBlock::ToolUse { id, name, input } = block {
+                if let ContentBlock::ToolUse { id, name, input, .. } = block {
                     tracing::info!("[StandardAgent] Tool use: {} ({})", name, id);
+
+                    // Loop detection: Check if this exact tool call was already made in this turn
+                    let call_signature = format!("{}:{}", name, input);
+                    if !tool_call_set.insert(call_signature) {
+                        tracing::warn!(
+                            "[StandardAgent] Loop detected: duplicate tool call {} with same args",
+                            name
+                        );
+                        internals.send_error(format!(
+                            "Loop detected: tool '{}' called multiple times with identical arguments in same turn",
+                            name
+                        ));
+                        // Stop processing further tools and exit the turn
+                        return Ok(());
+                    }
 
                     // Execute tool with permission check (if tools configured)
                     let result = if let Some(ref tools) = self.config.tools {
@@ -712,6 +737,7 @@ impl StandardAgent {
         let mut tool_input_accum = String::new();
         let mut current_tool_id = String::new();
         let mut current_tool_name = String::new();
+        let mut current_tool_signature: Option<String> = None;
 
         loop {
             tokio::select! {
@@ -743,10 +769,11 @@ impl StandardAgent {
                                     thinking_accum.clear();
                                     thinking_signature.clear();
                                 }
-                                ContentBlockStart::ToolUse { id, name, .. } => {
+                                ContentBlockStart::ToolUse { id, name, signature, .. } => {
                                     tool_input_accum.clear();
                                     current_tool_id = id.clone();
                                     current_tool_name = name.clone();
+                                    current_tool_signature = signature.clone();
                                 }
                             }
                         }
@@ -802,10 +829,12 @@ impl StandardAgent {
                                         id: current_tool_id.clone(),
                                         name: current_tool_name.clone(),
                                         input,
+                                        signature: current_tool_signature.clone(),
                                     });
                                     tool_input_accum.clear();
                                     current_tool_id.clear();
                                     current_tool_name.clear();
+                                    current_tool_signature = None;
                                 }
                                 current_block_index = None;
                             }

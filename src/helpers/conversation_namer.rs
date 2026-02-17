@@ -207,6 +207,7 @@ mod tests {
                     id: "tool_1".to_string(),
                     name: "Read".to_string(),
                     input: serde_json::json!({"path": "config.toml"}),
+                    signature: None,
                 },
             ]),
         ];

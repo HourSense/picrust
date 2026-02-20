@@ -156,6 +156,7 @@ impl LlmProvider for SwappableLlmProvider {
         match name.as_str() {
             "anthropic" => "anthropic",
             "gemini" => "gemini",
+            "openai" => "openai",
             _ => "unknown",
         }
     }

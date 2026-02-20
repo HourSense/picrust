@@ -51,6 +51,8 @@ struct OpenAiRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     tools: Option<Vec<OpenAiTool>>,
@@ -1015,11 +1017,30 @@ impl OpenAiProvider {
             None
         };
 
+        // Reasoning models (o-series, gpt-5.x) use max_completion_tokens instead of max_tokens
+        let is_reasoning_model = self.model.starts_with("o1-") 
+            || self.model.starts_with("o3-")
+            || self.model.starts_with("gpt-5");
+
+        let (max_tokens, max_completion_tokens) = if is_reasoning_model {
+            (None, Some(self.max_tokens))
+        } else {
+            (Some(self.max_tokens), None)
+        };
+
+        // Reasoning models don't support temperature parameter
+        let temperature = if is_reasoning_model {
+            None
+        } else {
+            Some(1.0)
+        };
+
         OpenAiRequest {
             model: self.model.clone(),
             messages: openai_messages,
-            max_tokens: Some(self.max_tokens),
-            temperature: Some(1.0),
+            max_tokens,
+            max_completion_tokens,
+            temperature,
             tools: openai_tools,
             tool_choice: openai_tool_choice,
             stream: None,

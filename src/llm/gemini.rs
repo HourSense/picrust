@@ -356,6 +356,19 @@ impl GeminiProvider {
     async fn convert_messages(&self, messages: &[Message]) -> Vec<GeminiContent> {
         let mut gemini_contents: Vec<GeminiContent> = Vec::new();
 
+        // Build a global mapping of tool_use_id -> tool_name from ALL messages
+        // This is needed because tool results may be in a different message than the tool use
+        let mut tool_id_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for msg in messages {
+            if let MessageContent::Blocks(blocks) = &msg.content {
+                for block in blocks {
+                    if let ContentBlock::ToolUse { id, name, .. } = block {
+                        tool_id_to_name.insert(id.clone(), name.clone());
+                    }
+                }
+            }
+        }
+
         for msg in messages {
             let gemini_role = match msg.role.as_str() {
                 "user" => "user",
@@ -363,7 +376,7 @@ impl GeminiProvider {
                 _ => "user",
             };
 
-            let parts = self.convert_content_to_parts(&msg.content, &msg.role).await;
+            let parts = self.convert_content_to_parts(&msg.content, &msg.role, &tool_id_to_name).await;
 
             // Check if parts contain function responses - those should be role "user"
             let has_function_response = parts.iter().any(|p| p.function_response.is_some());
@@ -428,7 +441,12 @@ impl GeminiProvider {
     }
 
     /// Convert internal content to Gemini parts
-    async fn convert_content_to_parts(&self, content: &MessageContent, _role: &str) -> Vec<GeminiPart> {
+    async fn convert_content_to_parts(
+        &self,
+        content: &MessageContent,
+        _role: &str,
+        tool_id_to_name: &std::collections::HashMap<String, String>,
+    ) -> Vec<GeminiPart> {
         match content {
             MessageContent::Text(text) => {
                 vec![GeminiPart {
@@ -479,13 +497,18 @@ impl GeminiProvider {
                             is_error,
                             ..
                         } => {
-                            // Find the tool name from our context or from the history
+                            // Find the tool name from:
+                            // 1. Current message blocks (for same-turn tool use/result)
+                            // 2. Global mapping from all messages (for cross-turn results)
                             let tool_name = tool_use_names
                                 .get(tool_use_id)
+                                .or_else(|| tool_id_to_name.get(tool_use_id))
                                 .cloned()
                                 .unwrap_or_else(|| {
-                                    // Try to find from previous messages stored in session
-                                    // Fallback: use the tool_use_id as a stand-in
+                                    tracing::warn!(
+                                        "[Gemini] Could not find tool name for ID: {}. Using ID as fallback.",
+                                        tool_use_id
+                                    );
                                     tool_use_id.clone()
                                 });
 
@@ -542,10 +565,6 @@ impl GeminiProvider {
                         }
                     }
                 }
-
-                // For user messages with tool results, we need to map tool_use_ids to names.
-                // The tool_use_names map above handles this for blocks within the same message.
-                // For cross-message lookups, we rely on the session history being passed correctly.
 
                 parts
             }
@@ -796,7 +815,6 @@ impl GeminiProvider {
     /// Thought signatures are now stored directly in ToolUse blocks (not in a separate cache)
     fn convert_gemini_parts_to_blocks(&self, parts: &[GeminiPart]) -> Vec<ContentBlock> {
         let mut blocks = Vec::new();
-        let mut tool_call_counter: u32 = 0;
 
         for part in parts {
             if let Some(ref text) = part.text {
@@ -815,8 +833,10 @@ impl GeminiProvider {
             }
 
             if let Some(ref fc) = part.function_call {
-                tool_call_counter += 1;
-                let tool_id = format!("gemini_tool_{}", tool_call_counter);
+                // Generate a unique tool ID using UUID to prevent collisions across turns
+                // Format: toolu_<8 chars of UUID> (similar to Anthropic's format)
+                let uuid = uuid::Uuid::new_v4();
+                let tool_id = format!("toolu_{}", &uuid.to_string().replace("-", "")[..12]);
 
                 // Store thought signature directly in the ToolUse block
                 let block = if let Some(ref sig) = part.thought_signature {
@@ -1104,7 +1124,10 @@ impl GeminiProvider {
                                         );
                                     }
 
-                                    let tool_id = format!("gemini_tool_{}", chunk_index);
+                                    // Generate a unique tool ID using UUID to prevent collisions across turns
+                                    // Format: toolu_<12 chars of UUID> (similar to Anthropic's format)
+                                    let uuid = uuid::Uuid::new_v4();
+                                    let tool_id = format!("toolu_{}", &uuid.to_string().replace("-", "")[..12]);
 
                                     let input_json = serde_json::to_string(&fc.args)
                                         .unwrap_or_else(|_| "{}".to_string());

@@ -81,8 +81,10 @@ struct GeminiPart {
     function_response: Option<GeminiFunctionResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
     inline_data: Option<GeminiInlineData>,
+    /// Thought signature from Gemini (received as "thoughtSignature" in JSON)
     #[serde(skip_serializing_if = "Option::is_none")]
     thought_signature: Option<String>,
+    /// Whether this part is a thought/thinking block
     #[serde(skip_serializing_if = "Option::is_none")]
     thought: Option<bool>,
 }
@@ -534,11 +536,16 @@ impl GeminiProvider {
                                 ..Default::default()
                             });
                         }
-                        ContentBlock::Thinking { thinking, .. } => {
-                            // Send thinking as a thought-flagged text part
+                        ContentBlock::Thinking { thinking, signature } => {
+                            // Send thinking as a thought-flagged text part, preserving signature
                             parts.push(GeminiPart {
                                 text: Some(thinking.clone()),
                                 thought: Some(true),
+                                thought_signature: if signature.is_empty() {
+                                    None
+                                } else {
+                                    Some(signature.clone())
+                                },
                                 ..Default::default()
                             });
                         }
@@ -820,11 +827,27 @@ impl GeminiProvider {
             if let Some(ref text) = part.text {
                 if part.thought == Some(true) {
                     // This is a thinking block
+                    // NOTE: Gemini returns signatures on the TEXT part that follows, not the thinking part
+                    // We'll add an empty signature here and update it if the next part has one
                     blocks.push(ContentBlock::Thinking {
                         thinking: text.clone(),
-                        signature: part.thought_signature.clone().unwrap_or_default(),
+                        signature: String::new(), // Will be updated if next part has signature
                     });
                 } else if !text.is_empty() {
+                    // This is a text block
+                    // Check if it has a thoughtSignature - if so, attach it to the previous thinking block
+                    if let Some(ref signature) = part.thought_signature {
+                        if !signature.is_empty() {
+                            // Find the last thinking block and update its signature
+                            if let Some(ContentBlock::Thinking { signature: sig, .. }) = blocks.last_mut() {
+                                tracing::debug!("[Gemini] Attaching signature ({} bytes) to previous thinking block", signature.len());
+                                *sig = signature.clone();
+                            } else {
+                                tracing::warn!("[Gemini] Found thoughtSignature but no previous thinking block to attach it to");
+                            }
+                        }
+                    }
+
                     blocks.push(ContentBlock::Text {
                         text: text.clone(),
                         cache_control: None,
@@ -903,6 +926,13 @@ impl GeminiProvider {
 
         tracing::debug!("[Gemini] Response status: {}", status);
         tracing::debug!("[Gemini] Response body: {}", response_text);
+
+        // Log thought signature presence in raw response
+        if response_text.contains("\"thoughtSignature\"") {
+            tracing::info!("[Gemini] Response contains thoughtSignature field(s)");
+        } else {
+            tracing::warn!("[Gemini] Response does NOT contain thoughtSignature field");
+        }
 
         if !status.is_success() {
             tracing::error!("[Gemini] API error: {} - {}", status, response_text);
@@ -1244,6 +1274,13 @@ impl GeminiProvider {
         };
 
         let thinking_config = self.convert_thinking_config(thinking);
+
+        // Log thinking config for debugging
+        if thinking_config.is_some() {
+            tracing::info!("[Gemini] Thinking config enabled: {:?}", thinking_config);
+        } else {
+            tracing::warn!("[Gemini] No thinking config provided - thought signatures will NOT be returned");
+        }
 
         GeminiRequest {
             contents,

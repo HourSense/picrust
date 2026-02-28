@@ -14,7 +14,7 @@ use crate::tools::ToolRegistry;
 /// Use the builder pattern to configure the agent:
 ///
 /// ```ignore
-/// let config = AgentConfig::new("You are a helpful assistant")
+/// let config = AgentConfig::new()
 ///     .with_tools(tools)
 ///     .with_injection_chain(injections)
 ///     .with_max_tool_iterations(50)
@@ -22,10 +22,10 @@ use crate::tools::ToolRegistry;
 ///     .with_streaming(true)
 ///     .with_debug(true);
 /// ```
+///
+/// The system prompt is no longer part of AgentConfig — it lives in the session's
+/// `system_prompt.md` file and is passed to `AgentSession::new()`.
 pub struct AgentConfig {
-    /// System prompt for the LLM
-    pub system_prompt: String,
-
     /// Tool registry (optional - agent can work without tools)
     pub tools: Option<Arc<ToolRegistry>>,
 
@@ -104,10 +104,12 @@ pub struct AgentConfig {
 }
 
 impl AgentConfig {
-    /// Create a new agent configuration with a system prompt
-    pub fn new(system_prompt: impl Into<String>) -> Self {
+    /// Create a new agent configuration
+    ///
+    /// The system prompt is not set here — it is stored in the session's `system_prompt.md`
+    /// and managed via `AgentSession::new()` or `AgentSession::update_system_prompt()`.
+    pub fn new() -> Self {
         Self {
-            system_prompt: system_prompt.into(),
             tools: None,
             injections: InjectionChain::new(),
             max_tool_iterations: 100,
@@ -349,14 +351,13 @@ impl AgentConfig {
 
 impl Default for AgentConfig {
     fn default() -> Self {
-        Self::new("You are a helpful assistant.")
+        Self::new()
     }
 }
 
 impl std::fmt::Debug for AgentConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AgentConfig")
-            .field("system_prompt", &format!("{}...", &self.system_prompt.chars().take(50).collect::<String>()))
             .field("tools", &self.tools.as_ref().map(|t| t.tool_names()))
             .field("max_tool_iterations", &self.max_tool_iterations)
             .field("auto_save_session", &self.auto_save_session)
@@ -388,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_agent_config_with_debug() {
-        let config = AgentConfig::new("Test").with_debug(true);
+        let config = AgentConfig::new().with_debug(true);
         assert!(config.debug_enabled);
     }
 }

@@ -51,6 +51,30 @@ impl SessionStorage {
         self.session_dir(session_id).join("history.jsonl")
     }
 
+    /// Get the system prompt file path for a session
+    pub fn system_prompt_path(&self, session_id: &str) -> PathBuf {
+        self.session_dir(session_id).join("system_prompt.md")
+    }
+
+    /// Save the system prompt to disk
+    pub fn save_system_prompt(&self, session_id: &str, prompt: &str) -> FrameworkResult<()> {
+        self.ensure_session_dir(session_id)?;
+        let path = self.system_prompt_path(session_id);
+        fs::write(&path, prompt)?;
+        Ok(())
+    }
+
+    /// Load the system prompt from disk
+    pub fn load_system_prompt(&self, session_id: &str) -> FrameworkResult<String> {
+        let path = self.system_prompt_path(session_id);
+        if !path.exists() {
+            return Err(crate::core::error::FrameworkError::Other(
+                format!("system_prompt.md not found for session '{}'", session_id),
+            ));
+        }
+        Ok(fs::read_to_string(&path)?)
+    }
+
     /// Create the session directory if it doesn't exist
     pub fn ensure_session_dir(&self, session_id: &str) -> FrameworkResult<PathBuf> {
         let dir = self.session_dir(session_id);

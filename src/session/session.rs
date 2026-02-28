@@ -21,6 +21,9 @@ pub struct AgentSession {
     /// Conversation history
     pub messages: Vec<Message>,
 
+    /// The agent's system prompt — loaded from/persisted to system_prompt.md
+    system_prompt: String,
+
     /// Storage backend for persistence
     storage: SessionStorage,
 }
@@ -29,22 +32,25 @@ impl AgentSession {
     /// Create a new root agent session
     ///
     /// This creates a new session with the given metadata and empty history.
-    /// The session is automatically persisted to disk.
+    /// The system prompt is written to `system_prompt.md` in the session folder immediately.
     pub fn new(
         session_id: impl Into<String>,
         agent_type: impl Into<String>,
         name: impl Into<String>,
         description: impl Into<String>,
+        system_prompt: impl Into<String>,
     ) -> FrameworkResult<Self> {
         let storage = SessionStorage::new();
         let metadata = SessionMetadata::new(session_id, agent_type, name, description);
+        let system_prompt = system_prompt.into();
 
-        // Persist the metadata
         storage.save_metadata(&metadata)?;
+        storage.save_system_prompt(&metadata.session_id, &system_prompt)?;
 
         Ok(Self {
             metadata,
             messages: Vec::new(),
+            system_prompt,
             storage,
         })
     }
@@ -55,16 +61,19 @@ impl AgentSession {
         agent_type: impl Into<String>,
         name: impl Into<String>,
         description: impl Into<String>,
+        system_prompt: impl Into<String>,
         storage: SessionStorage,
     ) -> FrameworkResult<Self> {
         let metadata = SessionMetadata::new(session_id, agent_type, name, description);
+        let system_prompt = system_prompt.into();
 
-        // Persist the metadata
         storage.save_metadata(&metadata)?;
+        storage.save_system_prompt(&metadata.session_id, &system_prompt)?;
 
         Ok(Self {
             metadata,
             messages: Vec::new(),
+            system_prompt,
             storage,
         })
     }
@@ -78,11 +87,13 @@ impl AgentSession {
         agent_type: impl Into<String>,
         name: impl Into<String>,
         description: impl Into<String>,
+        system_prompt: impl Into<String>,
         parent_session_id: impl Into<String>,
         parent_tool_use_id: impl Into<String>,
     ) -> FrameworkResult<Self> {
         let storage = SessionStorage::new();
         let parent_id = parent_session_id.into();
+        let system_prompt = system_prompt.into();
 
         let metadata = SessionMetadata::new_subagent(
             session_id,
@@ -93,8 +104,8 @@ impl AgentSession {
             parent_tool_use_id,
         );
 
-        // Persist the metadata
         storage.save_metadata(&metadata)?;
+        storage.save_system_prompt(&metadata.session_id, &system_prompt)?;
 
         // Update parent to track this child
         if let Ok(mut parent_meta) = storage.load_metadata(&parent_id) {
@@ -105,6 +116,7 @@ impl AgentSession {
         Ok(Self {
             metadata,
             messages: Vec::new(),
+            system_prompt,
             storage,
         })
     }
@@ -115,11 +127,13 @@ impl AgentSession {
         agent_type: impl Into<String>,
         name: impl Into<String>,
         description: impl Into<String>,
+        system_prompt: impl Into<String>,
         parent_session_id: impl Into<String>,
         parent_tool_use_id: impl Into<String>,
         storage: SessionStorage,
     ) -> FrameworkResult<Self> {
         let parent_id = parent_session_id.into();
+        let system_prompt = system_prompt.into();
 
         let metadata = SessionMetadata::new_subagent(
             session_id,
@@ -130,8 +144,8 @@ impl AgentSession {
             parent_tool_use_id,
         );
 
-        // Persist the metadata
         storage.save_metadata(&metadata)?;
+        storage.save_system_prompt(&metadata.session_id, &system_prompt)?;
 
         // Update parent to track this child
         if let Ok(mut parent_meta) = storage.load_metadata(&parent_id) {
@@ -142,6 +156,7 @@ impl AgentSession {
         Ok(Self {
             metadata,
             messages: Vec::new(),
+            system_prompt,
             storage,
         })
     }
@@ -156,10 +171,12 @@ impl AgentSession {
     pub fn load_with_storage(session_id: &str, storage: SessionStorage) -> FrameworkResult<Self> {
         let metadata = storage.load_metadata(session_id)?;
         let messages = storage.load_messages(session_id)?;
+        let system_prompt = storage.load_system_prompt(session_id)?;
 
         Ok(Self {
             metadata,
             messages,
+            system_prompt,
             storage,
         })
     }
@@ -182,6 +199,18 @@ impl AgentSession {
     /// Get the agent description
     pub fn description(&self) -> &str {
         &self.metadata.description
+    }
+
+    /// Get the current system prompt
+    pub fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
+
+    /// Update the system prompt in memory and persist to system_prompt.md
+    pub fn update_system_prompt(&mut self, prompt: impl Into<String>) -> FrameworkResult<()> {
+        self.system_prompt = prompt.into();
+        self.storage.save_system_prompt(&self.metadata.session_id, &self.system_prompt)?;
+        Ok(())
     }
 
     /// Check if this is a subagent session
@@ -241,6 +270,7 @@ impl AgentSession {
     pub fn reload(&mut self) -> FrameworkResult<()> {
         self.metadata = self.storage.load_metadata(&self.metadata.session_id)?;
         self.messages = self.storage.load_messages(&self.metadata.session_id)?;
+        self.system_prompt = self.storage.load_system_prompt(&self.metadata.session_id)?;
         Ok(())
     }
 
@@ -421,7 +451,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let session =
-            AgentSession::new_with_storage("test_session", "coder", "Test Coder", "A test agent", storage).unwrap();
+            AgentSession::new_with_storage("test_session", "coder", "Test Coder", "A test agent", "You are a coder.", storage).unwrap();
 
         assert_eq!(session.session_id(), "test_session");
         assert_eq!(session.agent_type(), "coder");
@@ -437,7 +467,7 @@ mod tests {
 
         // Create parent first
         let _parent =
-            AgentSession::new_with_storage("parent", "main", "Main Agent", "Parent agent", storage.clone())
+            AgentSession::new_with_storage("parent", "main", "Main Agent", "Parent agent", "Test system prompt.", storage.clone())
                 .unwrap();
 
         // Create subagent
@@ -446,6 +476,7 @@ mod tests {
             "researcher",
             "Research Agent",
             "Finds info",
+            "Test system prompt.",
             "parent",
             "tool_123",
             storage.clone(),
@@ -467,7 +498,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let mut session =
-            AgentSession::new_with_storage("msg_session", "coder", "Test", "Testing", storage.clone())
+            AgentSession::new_with_storage("msg_session", "coder", "Test", "Testing", "Test system prompt.", storage.clone())
                 .unwrap();
 
         // Add messages
@@ -486,7 +517,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let mut session =
-            AgentSession::new_with_storage("save_test", "coder", "Test", "Testing", storage.clone())
+            AgentSession::new_with_storage("save_test", "coder", "Test", "Testing", "Test system prompt.", storage.clone())
                 .unwrap();
 
         // Add messages directly (bypassing append)
@@ -503,7 +534,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let session =
-            AgentSession::new_with_storage("to_delete", "coder", "Test", "Testing", storage.clone())
+            AgentSession::new_with_storage("to_delete", "coder", "Test", "Testing", "Test system prompt.", storage.clone())
                 .unwrap();
 
         assert!(AgentSession::exists_with_storage("to_delete", &storage));
@@ -518,9 +549,9 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let _s1 =
-            AgentSession::new_with_storage("session1", "coder", "S1", "D1", storage.clone()).unwrap();
+            AgentSession::new_with_storage("session1", "coder", "S1", "D1", "Test system prompt.", storage.clone()).unwrap();
         let _s2 =
-            AgentSession::new_with_storage("session2", "researcher", "S2", "D2", storage.clone())
+            AgentSession::new_with_storage("session2", "researcher", "S2", "D2", "Test system prompt.", storage.clone())
                 .unwrap();
 
         let sessions = AgentSession::list_all_with_storage(&storage).unwrap();
@@ -534,7 +565,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let mut session =
-            AgentSession::new_with_storage("custom_test", "coder", "Test", "Testing", storage.clone())
+            AgentSession::new_with_storage("custom_test", "coder", "Test", "Testing", "Test system prompt.", storage.clone())
                 .unwrap();
 
         session.set_custom("key1", "value1");
@@ -558,7 +589,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
 
         let mut session =
-            AgentSession::new_with_storage("model_test", "coder", "Test", "Testing", storage).unwrap();
+            AgentSession::new_with_storage("model_test", "coder", "Test", "Testing", "Test system prompt.", storage).unwrap();
 
         session.set_model("claude-opus-4-5-20251101");
         session.set_provider("anthropic");
@@ -576,6 +607,7 @@ mod tests {
             "coder",
             "Test",
             "Testing",
+            "Test system prompt.",
             storage.clone(),
         )
         .unwrap();
@@ -603,10 +635,10 @@ mod tests {
 
         // Create top-level sessions
         let _parent1 =
-            AgentSession::new_with_storage("parent1", "main", "Parent 1", "First parent", storage.clone())
+            AgentSession::new_with_storage("parent1", "main", "Parent 1", "First parent", "Test system prompt.", storage.clone())
                 .unwrap();
         let _parent2 =
-            AgentSession::new_with_storage("parent2", "main", "Parent 2", "Second parent", storage.clone())
+            AgentSession::new_with_storage("parent2", "main", "Parent 2", "Second parent", "Test system prompt.", storage.clone())
                 .unwrap();
 
         // Create a subagent
@@ -615,6 +647,7 @@ mod tests {
             "helper",
             "Child 1",
             "A child agent",
+            "Test system prompt.",
             "parent1",
             "tool_123",
             storage.clone(),
@@ -646,6 +679,7 @@ mod tests {
             "coder",
             "Main Agent",
             "Main agent description",
+            "Test system prompt.",
             storage.clone(),
         )
         .unwrap();
@@ -655,6 +689,7 @@ mod tests {
             "researcher",
             "Sub Agent",
             "Sub agent description",
+            "Test system prompt.",
             "main_agent",
             "tool_456",
             storage.clone(),
@@ -681,6 +716,7 @@ mod tests {
             "coder",
             "Test",
             "Testing",
+            "Test system prompt.",
             storage.clone(),
         )
         .unwrap();
@@ -704,6 +740,7 @@ mod tests {
             "researcher",
             "Research Agent",
             "Finds information",
+            "Test system prompt.",
             storage.clone(),
         )
         .unwrap();

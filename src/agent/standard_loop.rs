@@ -264,10 +264,10 @@ impl StandardAgent {
                 break;
             }
 
-            // Get messages from history
-            let messages = {
+            // Get messages and system prompt from session
+            let (messages, system_prompt_text) = {
                 let session = internals.session.read().await;
-                session.history().to_vec()
+                (session.history().to_vec(), session.system_prompt().to_string())
             };
 
             // IMPORTANT: Apply cache control BEFORE injections
@@ -275,7 +275,7 @@ impl StandardAgent {
             // The injections will be added AFTER the cache breakpoint, so they're sent but not cached
             // This allows the cache to match across turns even though injections are dynamic
             let (tools_with_cache, system_with_cache, mut messages_with_cache) =
-                self.apply_cache_control(tool_definitions.to_vec(), messages);
+                self.apply_cache_control(&system_prompt_text, tool_definitions.to_vec(), messages);
 
             // Apply context injections AFTER cache control
             messages_with_cache = self.config.injections.apply(internals, messages_with_cache);
@@ -356,13 +356,6 @@ impl StandardAgent {
                 "[StandardAgent] LLM response: stop_reason={:?}",
                 stop_reason
             );
-
-            // Check for empty response (loop prevention)
-            if content_blocks.is_empty() {
-                tracing::warn!("[StandardAgent] Model returned empty response with no tool calls");
-                internals.send_status("Model returned empty response");
-                break;
-            }
 
             // Process tool use blocks and execute tools
             let mut tool_results: Vec<(String, ToolResult)> = Vec::new();
@@ -573,6 +566,7 @@ impl StandardAgent {
     /// Apply cache control to tools, system prompt, and messages (if enabled)
     fn apply_cache_control(
         &self,
+        system_prompt_text: &str,
         mut tool_definitions: Vec<crate::llm::ToolDefinition>,
         mut messages: Vec<Message>,
     ) -> (Vec<crate::llm::ToolDefinition>, Option<SystemPrompt>, Vec<Message>) {
@@ -580,7 +574,7 @@ impl StandardAgent {
             // Caching disabled - return system prompt as simple text
             return (
                 tool_definitions,
-                Some(SystemPrompt::Text(self.config.system_prompt.clone())),
+                Some(SystemPrompt::Text(system_prompt_text.to_string())),
                 messages,
             );
         }
@@ -610,7 +604,7 @@ impl StandardAgent {
 
         // 2. Create system prompt with cache control
         let system_prompt = Some(SystemPrompt::Blocks(vec![SystemBlock::new(
-            self.config.system_prompt.clone(),
+            system_prompt_text.to_string(),
         )
         .with_cache_control(CacheControl::ephemeral())]));
 

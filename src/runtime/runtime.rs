@@ -198,6 +198,7 @@ impl AgentRuntime {
         agent_type: impl Into<String>,
         name: impl Into<String>,
         description: impl Into<String>,
+        system_prompt: impl Into<String>,
         parent_session_id: impl Into<String>,
         parent_tool_use_id: impl Into<String>,
         agent_fn: F,
@@ -211,6 +212,7 @@ impl AgentRuntime {
             agent_type,
             name,
             description,
+            system_prompt,
             parent_session_id,
             parent_tool_use_id,
         )?;

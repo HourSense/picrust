@@ -464,6 +464,7 @@ impl AgentInternals {
         agent_type: impl Into<String>,
         name: impl Into<String>,
         description: impl Into<String>,
+        system_prompt: impl Into<String>,
         tool_use_id: impl Into<String>,
         agent_fn: F,
     ) -> FrameworkResult<super::AgentHandle>
@@ -475,6 +476,7 @@ impl AgentInternals {
         let agent_type = agent_type.into();
         let name_str = name.into();
         let description_str = description.into();
+        let system_prompt_str = system_prompt.into();
 
         // Get the runtime from context
         let runtime = self
@@ -489,6 +491,7 @@ impl AgentInternals {
                 &agent_type,
                 &name_str,
                 &description_str,
+                system_prompt_str,
                 self.session_id(),
                 tool_use_id,
                 agent_fn,

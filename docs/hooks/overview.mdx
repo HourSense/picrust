@@ -29,6 +29,11 @@ hooks.add(HookEvent::PostToolUseFailure, |ctx: &mut HookContext| {
 hooks.add(HookEvent::UserPromptSubmit, |ctx: &mut HookContext| {
     HookResult::none()
 })?;
+
+// TurnComplete - After the full turn finishes (agent about to suspend)
+hooks.add(HookEvent::TurnComplete, |ctx: &mut HookContext| {
+    HookResult::none()
+})?;
 ```
 
 ## Pattern Matching

@@ -27,6 +27,8 @@ pub enum HookEvent {
     UserPromptSubmit,
     /// After assistant generates a response
     PostAssistantResponse,
+    /// After the full turn completes (agent about to suspend/go idle)
+    TurnComplete,
 }
 
 impl std::fmt::Display for HookEvent {
@@ -37,6 +39,7 @@ impl std::fmt::Display for HookEvent {
             HookEvent::PostToolUseFailure => write!(f, "PostToolUseFailure"),
             HookEvent::UserPromptSubmit => write!(f, "UserPromptSubmit"),
             HookEvent::PostAssistantResponse => write!(f, "PostAssistantResponse"),
+            HookEvent::TurnComplete => write!(f, "TurnComplete"),
         }
     }
 }
@@ -199,6 +202,23 @@ impl<'a> HookContext<'a> {
             user_prompt: None,
             assistant_content: Some(content_blocks.to_vec()),
             stop_reason,
+        }
+    }
+
+    /// Create context for TurnComplete hook
+    pub fn turn_complete(internals: &'a mut AgentInternals, short_circuit_on_deny: bool) -> Self {
+        Self {
+            event: HookEvent::TurnComplete,
+            internals,
+            short_circuit_on_deny,
+            tool_name: None,
+            tool_input: None,
+            tool_use_id: None,
+            tool_result: None,
+            error: None,
+            user_prompt: None,
+            assistant_content: None,
+            stop_reason: None,
         }
     }
 

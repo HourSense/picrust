@@ -67,6 +67,7 @@
 //! | `PostToolUseFailure` | After tool fails | messages (for logging) |
 //! | `UserPromptSubmit` | When user sends prompt | `user_prompt`, messages |
 //! | `PostAssistantResponse` | After assistant generates response | messages (for logging) |
+//! | `TurnComplete` | After turn finishes, before agent suspends | session, metadata |
 //!
 //! # HookResult
 //!

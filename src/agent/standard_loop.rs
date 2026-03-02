@@ -152,6 +152,15 @@ impl StandardAgent {
                             }
                         }
                     }
+                    // Run TurnComplete hooks
+                    if let Some(ref hooks) = self.config.hooks {
+                        let mut ctx = HookContext::turn_complete(
+                            &mut internals,
+                            self.config.hook_short_circuit,
+                        );
+                        let _result = hooks.run(&mut ctx);
+                    }
+
                     // Signal turn complete
                     internals.send_done();
 

@@ -1,11 +1,11 @@
 ---
 title: Introduction
-description: 'A Rust framework for building AI agents with Claude and Gemini - designed for applications that need autonomous, tool-using agents'
+description: 'A Rust framework for building AI agents with Claude, Gemini, and OpenAI - designed for applications that need autonomous, tool-using agents'
 ---
 
 ## What is PiCrust?
 
-PiCrust is a **Rust framework for building AI agents** that can use tools, maintain conversations, and execute complex tasks autonomously. It's specifically designed for applications that need to spawn, manage, and communicate with multiple agents - particularly suited for **Tauri apps** and other frontend-backend architectures.
+PiCrust is a **Rust framework for building AI agents** that can use tools, maintain conversations, and execute complex tasks autonomously. It's specifically designed for applications that need to spawn, manage, and communicate with multiple agents - particularly suited for **Tauri apps** and other frontend-backend architectures. Works with **Claude (Anthropic)**, **Gemini (Google)**, and **OpenAI** out of the box.
 
 <CardGroup cols={2}>
   <Card
@@ -50,7 +50,7 @@ Unlike simple chatbot libraries, PiCrust is designed for **real applications**:
 
 <AccordionGroup>
   <Accordion title="Multi-LLM Support">
-    Works with **Claude (Anthropic)** and **Gemini (Google)** out of the box. Swap providers at runtime or use different models for different tasks.
+    Works with **Claude (Anthropic)**, **Gemini (Google)**, and **OpenAI** out of the box. Swap providers at runtime or use different models for different tasks.
 
     ```rust
     // Use Claude
@@ -58,6 +58,9 @@ Unlike simple chatbot libraries, PiCrust is designed for **real applications**:
 
     // Or Gemini
     let llm = Arc::new(GeminiProvider::from_env()?);
+
+    // Or OpenAI
+    let llm = Arc::new(OpenAIProvider::from_env()?);
 
     // Swap at runtime
     let swappable = SwappableLlmProvider::new(fast_model);
@@ -215,6 +218,9 @@ PiCrust is built on these principles:
     # Or for Gemini:
     # export GEMINI_API_KEY="..."
     # export GEMINI_MODEL="gemini-3-flash-preview"
+    # Or for OpenAI:
+    # export OPENAI_API_KEY="sk-..."
+    # export OPENAI_MODEL="gpt-4o"
     ```
   </Step>
 

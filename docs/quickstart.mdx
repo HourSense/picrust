@@ -8,7 +8,7 @@ description: 'Build your first Agent in under 5 minutes with this step-by-step g
 Before you begin, make sure you have:
 
 - **Rust 1.70 or higher** installed
-- An **Anthropic API key** (or Google AI API key for Gemini)
+- An **Anthropic API key**, **Google AI API key** (Gemini), or **OpenAI API key**
 - Basic familiarity with async Rust and Tokio
 
 ## Installation
@@ -34,6 +34,10 @@ export ANTHROPIC_MODEL="claude-sonnet-4-5@20250929"
 # Or for Google Gemini
 export GEMINI_API_KEY="..."
 export GEMINI_MODEL="gemini-3-flash-preview"
+
+# Or for OpenAI
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-4o"
 ```
 
 ## Your First Agent
@@ -242,21 +246,38 @@ async fn main() -> anyhow::Result<()> {
 
 Now the agent can read files, write files, and execute shell commands!
 
-## Using Gemini Instead
+## Switching Providers
 
-Want to use Gemini instead of Claude? Just swap the provider:
+All three providers are interchangeable — just swap one line:
 
 ```rust
-use picrust::llm::GeminiProvider;
+use picrust::llm::{AnthropicProvider, GeminiProvider, OpenAIProvider};
 
-// Change this line:
+// Anthropic Claude (default)
 let llm: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
 
-// To this:
+// Google Gemini
 let llm: Arc<dyn LlmProvider> = Arc::new(GeminiProvider::from_env()?);
+
+// OpenAI
+let llm: Arc<dyn LlmProvider> = Arc::new(OpenAIProvider::from_env()?);
 ```
 
-That's it! The rest of the code stays the same. Make sure to set `GEMINI_API_KEY` and `GEMINI_MODEL` in your environment.
+The rest of the code stays the same regardless of which provider you use.
+
+<Tip>
+When using OpenAI, disable prompt caching (it's an Anthropic-specific feature) and use the OpenAI env vars:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export OPENAI_MODEL="gpt-4o"
+# Optional: custom endpoint (proxy, Azure, etc.)
+# export OPENAI_BASE_URL="https://my-proxy.example.com/v1/responses"
+```
+```rust
+let config = AgentConfig::new().with_prompt_caching(false);
+```
+</Tip>
 
 ## Handling Permissions
 
@@ -461,11 +482,20 @@ handle.send_input("Hello").await?;  // Then this
 
 ### API key not found
 
-Set your environment variables:
+Set the env vars for your chosen provider:
 
 ```bash
+# Anthropic
 export ANTHROPIC_API_KEY="your-key"
 export ANTHROPIC_MODEL="claude-sonnet-4-5@20250929"
+
+# Gemini
+export GEMINI_API_KEY="your-key"
+export GEMINI_MODEL="gemini-3-flash-preview"
+
+# OpenAI
+export OPENAI_API_KEY="your-key"
+export OPENAI_MODEL="gpt-4o"
 ```
 
 ## What's Next?

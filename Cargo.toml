@@ -60,3 +60,7 @@ path = "examples/mcp_agent/main.rs"
 [[example]]
 name = "gemini_test_agent"
 path = "examples/gemini_test_agent/main.rs"
+
+[[example]]
+name = "openai_test_agent"
+path = "examples/openai_test_agent/main.rs"

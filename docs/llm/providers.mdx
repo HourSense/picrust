@@ -1,6 +1,6 @@
 ---
 title: 'LLM Providers'
-description: 'Pluggable LLM backends - Anthropic, Gemini, and custom providers'
+description: 'Pluggable LLM backends - Anthropic, Gemini, OpenAI, and custom providers'
 ---
 
 ## Provider Trait
@@ -8,12 +8,13 @@ description: 'Pluggable LLM backends - Anthropic, Gemini, and custom providers'
 All providers implement `LlmProvider`:
 
 ```rust
-use picrust::llm::{LlmProvider, AnthropicProvider, GeminiProvider};
+use picrust::llm::{LlmProvider, AnthropicProvider, GeminiProvider, OpenAIProvider};
 
 let anthropic: Arc<dyn LlmProvider> = Arc::new(AnthropicProvider::from_env()?);
 let gemini: Arc<dyn LlmProvider> = Arc::new(GeminiProvider::from_env()?);
+let openai: Arc<dyn LlmProvider> = Arc::new(OpenAIProvider::from_env()?);
 
-let agent = StandardAgent::new(config, anthropic);
+let agent = StandardAgent::new(config, openai);
 ```
 
 ## AnthropicProvider
@@ -64,6 +65,70 @@ let llm = GeminiProvider::new("api-key")?
     .with_model("gemini-2.0-flash-exp");
 ```
 
+## OpenAIProvider
+
+Uses the [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses).
+
+```rust
+use picrust::llm::OpenAIProvider;
+
+// From env vars (OPENAI_API_KEY, OPENAI_MODEL)
+let llm = OpenAIProvider::from_env()?;
+
+// Explicit key and model
+let llm = OpenAIProvider::new("sk-...")?
+    .with_model("gpt-4o")
+    .with_max_tokens(4096);
+```
+
+### Environment Variables
+
+| Variable | Required | Default |
+|---|---|---|
+| `OPENAI_API_KEY` | Yes | — |
+| `OPENAI_MODEL` | Yes | — |
+| `OPENAI_BASE_URL` | No | `https://api.openai.com/v1/responses` |
+| `OPENAI_MAX_TOKENS` | No | `32000` |
+
+### Custom Base URL
+
+The base URL is configurable, which makes it easy to point the provider at a local proxy, Azure OpenAI, or any OpenAI-compatible endpoint:
+
+```bash
+export OPENAI_BASE_URL="https://my-proxy.example.com/v1/responses"
+```
+
+Or in code:
+
+```rust
+let llm = OpenAIProvider::new("sk-...")?
+    .with_model("gpt-4o")
+    .with_base_url("https://my-proxy.example.com/v1/responses");
+```
+
+### Dynamic Auth (Proxy / JWT)
+
+```rust
+use picrust::llm::{OpenAIProvider, AuthConfig};
+
+let llm = OpenAIProvider::with_auth_provider(|| async {
+    let token = my_auth_service.get_fresh_token().await?;
+    Ok(AuthConfig::with_base_url(
+        token,
+        "https://my-proxy.example.com/v1/responses",
+    ))
+});
+```
+
+### Notes
+
+- **Thinking / extended reasoning**: `ThinkingConfig` is silently ignored — OpenAI o-series reasoning is handled by the model automatically and is not configurable via this API.
+- **Prompt caching**: OpenAI does not use Anthropic-style prompt caching. Disable it in `AgentConfig` to avoid unnecessary overhead:
+  ```rust
+  let config = AgentConfig::new().with_prompt_caching(false);
+  ```
+- **Tool schema**: Tools are translated to OpenAI function definitions automatically. Optional parameters are supported (strict mode is disabled).
+
 ## SwappableLlmProvider
 
 Change LLM at runtime:
@@ -82,16 +147,16 @@ swappable.swap(gemini_provider).await;
 
 ## Extended Thinking
 
-Supported by both AnthropicProvider and GeminiProvider:
+Supported by AnthropicProvider and GeminiProvider:
 
 ```rust
 use picrust::llm::ThinkingConfig;
 
-let config = AgentConfig::new("...")
+let config = AgentConfig::new()
     .with_thinking(16000);  // Budget in tokens
 
 // Or with config object
-let config = AgentConfig::new("...")
+let config = AgentConfig::new()
     .with_thinking_config(ThinkingConfig::enabled(32000));
 ```
 
@@ -107,7 +172,9 @@ let config = AgentConfig::new("...")
   - `8193+` → `high`
 - **Gemini 2.5 models**: Uses numeric budget directly
 
-The conversion is automatic based on the model name, so you use the same API for both providers.
+**OpenAIProvider**: `ThinkingConfig` is ignored. o-series models (o3, o4-mini, etc.) reason automatically — there is no token budget to configure via the Responses API.
+
+The conversion is automatic based on the model name, so you use the same API for Anthropic and Gemini.
 
 ## Message Types
 

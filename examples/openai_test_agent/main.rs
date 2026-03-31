@@ -48,14 +48,16 @@ async fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
     let use_tools = args.iter().any(|a| a == "--tools" || a == "-t");
     let use_streaming = args.iter().any(|a| a == "--stream" || a == "-s");
+    let use_thinking = args.iter().any(|a| a == "--thinking" || a == "--reason");
     let interactive = args.iter().any(|a| a == "--interactive" || a == "-i");
 
     println!("=== OpenAI Test Agent ===");
     println!(
-        "Mode: {} | Streaming: {} | Tools: {}\n",
+        "Mode: {} | Streaming: {} | Tools: {} | Thinking: {}\n",
         if interactive { "interactive" } else { "non-interactive" },
         use_streaming,
-        use_tools
+        use_tools,
+        use_thinking
     );
 
     // --- Create OpenAI provider ---
@@ -116,6 +118,11 @@ async fn main() -> Result<()> {
         .with_prompt_caching(false) // OpenAI Responses API doesn't use Anthropic-style caching
         .with_auto_name(false);
 
+    if use_thinking {
+        // 16k budget → maps to "high" effort in OpenAI reasoning
+        config = config.with_thinking(16000);
+    }
+
     if use_tools {
         config = config.with_tools(tools);
     }
@@ -172,6 +179,12 @@ async fn main() -> Result<()> {
                                 response_text.push_str(&text);
                             }
                             OutputChunk::TextComplete(_) => {}
+                            OutputChunk::ThinkingDelta(text) => {
+                                print!("\x1b[2m{}\x1b[0m", text); // dim text for thinking
+                            }
+                            OutputChunk::ThinkingComplete(text) => {
+                                println!("\n  [Thinking complete: {} chars]", text.len());
+                            }
                             OutputChunk::ToolStart { name, input, .. } => {
                                 println!("\n  [Tool call: {}]", name);
                                 println!("  Input: {}", input);

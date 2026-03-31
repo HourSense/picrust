@@ -59,7 +59,18 @@ struct OpenAIRequest {
     max_output_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning: Option<OpenAIReasoning>,
     stream: bool,
+}
+
+/// Reasoning configuration for o-series and reasoning-capable models
+#[derive(Debug, Serialize)]
+struct OpenAIReasoning {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    effort: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    summary: Option<String>,
 }
 
 /// Top-level item in the `input` array
@@ -152,6 +163,21 @@ enum OutputItem {
         #[serde(default)]
         status: String,
     },
+    #[serde(rename = "reasoning")]
+    Reasoning {
+        id: String,
+        #[serde(default)]
+        summary: Vec<ReasoningSummaryPart>,
+    },
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+enum ReasoningSummaryPart {
+    #[serde(rename = "text")]
+    Text { text: String },
     #[serde(other)]
     Unknown,
 }
@@ -171,6 +197,14 @@ struct OpenAIUsage {
     input_tokens: u32,
     #[serde(default)]
     output_tokens: u32,
+    #[serde(default)]
+    output_tokens_details: Option<OutputTokensDetails>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct OutputTokensDetails {
+    #[serde(default)]
+    reasoning_tokens: u32,
 }
 
 // ============================================================================
@@ -216,6 +250,30 @@ enum OpenAIStreamEvent {
         item: OutputItem,
     },
 
+    #[serde(rename = "response.reasoning_summary_part.added")]
+    ReasoningSummaryPartAdded {
+        output_index: usize,
+        summary_index: usize,
+    },
+
+    #[serde(rename = "response.reasoning_summary_text.delta")]
+    ReasoningSummaryTextDelta {
+        output_index: usize,
+        #[allow(dead_code)]
+        summary_index: usize,
+        delta: String,
+    },
+
+    #[serde(rename = "response.reasoning_summary_text.done")]
+    ReasoningSummaryTextDone {
+        #[allow(dead_code)]
+        output_index: usize,
+        #[allow(dead_code)]
+        summary_index: usize,
+        #[allow(dead_code)]
+        text: String,
+    },
+
     #[serde(rename = "response.completed")]
     ResponseCompleted { response: OpenAIStreamResponse },
 
@@ -254,6 +312,10 @@ enum OutputItemPartial {
         id: String,
         call_id: String,
         name: String,
+    },
+    #[serde(rename = "reasoning")]
+    Reasoning {
+        id: String,
     },
     #[serde(other)]
     Unknown,
@@ -402,6 +464,7 @@ impl OpenAIProvider {
         system: Option<SystemPrompt>,
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
+        thinking: Option<ThinkingConfig>,
         session_id: Option<&str>,
     ) -> Result<MessageResponse> {
         let auth_config = self.auth.get_auth().await
@@ -415,6 +478,7 @@ impl OpenAIProvider {
             system,
             tools,
             tool_choice,
+            thinking,
             false,
         );
 
@@ -459,6 +523,7 @@ impl OpenAIProvider {
         system: Option<SystemPrompt>,
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
+        thinking: Option<ThinkingConfig>,
         session_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let auth_config = self.auth.get_auth().await
@@ -472,6 +537,7 @@ impl OpenAIProvider {
             system,
             tools,
             tool_choice,
+            thinking,
             true,
         );
 
@@ -556,6 +622,7 @@ fn build_request(
     system: Option<SystemPrompt>,
     tools: Vec<ToolDefinition>,
     tool_choice: Option<ToolChoice>,
+    thinking: Option<ThinkingConfig>,
     stream: bool,
 ) -> OpenAIRequest {
     let instructions = system.map(system_prompt_to_string);
@@ -566,6 +633,7 @@ fn build_request(
         Some(tools.into_iter().filter_map(tool_def_to_openai).collect())
     };
     let openai_tool_choice = tool_choice.map(tool_choice_to_openai);
+    let reasoning = thinking_to_reasoning(thinking);
 
     OpenAIRequest {
         model: model.to_string(),
@@ -575,8 +643,26 @@ fn build_request(
         tool_choice: openai_tool_choice,
         max_output_tokens: max_tokens,
         temperature: None,
+        reasoning,
         stream,
     }
+}
+
+/// Convert internal ThinkingConfig to OpenAI reasoning format
+fn thinking_to_reasoning(thinking: Option<ThinkingConfig>) -> Option<OpenAIReasoning> {
+    thinking.map(|config| {
+        let effort = match config.budget_tokens {
+            0 => "low",
+            1..=2048 => "low",
+            2049..=8192 => "medium",
+            _ => "high",
+        };
+        tracing::info!("[OpenAI] Reasoning enabled: effort={}, budget_tokens={}", effort, config.budget_tokens);
+        OpenAIReasoning {
+            effort: Some(effort.to_string()),
+            summary: Some("auto".to_string()),
+        }
+    })
 }
 
 fn system_prompt_to_string(system: SystemPrompt) -> String {
@@ -764,6 +850,21 @@ fn openai_response_to_anthropic(resp: OpenAIResponse) -> MessageResponse {
                 });
                 has_tool_use = true;
             }
+            OutputItem::Reasoning { summary, .. } => {
+                let text = summary.into_iter()
+                    .filter_map(|part| match part {
+                        ReasoningSummaryPart::Text { text } => Some(text),
+                        ReasoningSummaryPart::Unknown => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                if !text.is_empty() {
+                    content_blocks.push(ContentBlock::Thinking {
+                        thinking: text,
+                        signature: String::new(),
+                    });
+                }
+            }
             OutputItem::Unknown => {}
         }
     }
@@ -778,6 +879,11 @@ fn openai_response_to_anthropic(resp: OpenAIResponse) -> MessageResponse {
 
     let usage = resp.usage.unwrap_or_default();
 
+    let reasoning_tokens = usage.output_tokens_details
+        .as_ref()
+        .map(|d| d.reasoning_tokens)
+        .filter(|&t| t > 0);
+
     MessageResponse {
         id: resp.id,
         response_type: "message".to_string(),
@@ -791,7 +897,7 @@ fn openai_response_to_anthropic(resp: OpenAIResponse) -> MessageResponse {
             output_tokens: usage.output_tokens,
             cache_creation_input_tokens: None,
             cache_read_input_tokens: None,
-            thoughts_token_count: None,
+            thoughts_token_count: reasoning_tokens,
         },
     }
 }
@@ -843,6 +949,11 @@ fn translate_stream_event(
                         signature: None,
                     }
                 }
+                OutputItemPartial::Reasoning { .. } => {
+                    ContentBlockStart::Thinking {
+                        thinking: String::new(),
+                    }
+                }
                 OutputItemPartial::Unknown => return vec![],
             };
             vec![StreamEvent::ContentBlockStart(ContentBlockStartEvent {
@@ -873,6 +984,23 @@ fn translate_stream_event(
             vec![StreamEvent::ContentBlockStop(ContentBlockStopEvent {
                 index: output_index,
             })]
+        }
+
+        OpenAIStreamEvent::ReasoningSummaryPartAdded { .. } => {
+            // Already handled by OutputItemAdded(Reasoning) → ContentBlockStart(Thinking)
+            vec![]
+        }
+
+        OpenAIStreamEvent::ReasoningSummaryTextDelta { output_index, delta, .. } => {
+            vec![StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+                index: output_index,
+                delta: ContentDelta::ThinkingDelta { thinking: delta },
+            })]
+        }
+
+        OpenAIStreamEvent::ReasoningSummaryTextDone { .. } => {
+            // Accumulated text is handled by the agent loop via ThinkingDelta events
+            vec![]
         }
 
         OpenAIStreamEvent::ResponseCompleted { response } => {
@@ -929,7 +1057,7 @@ impl LlmProvider for OpenAIProvider {
 
         let system = system_prompt.map(|s| SystemPrompt::Text(s.to_string()));
         let resp = self
-            .send_request_internal(messages, system, vec![], None, session_id)
+            .send_request_internal(messages, system, vec![], None, None, session_id)
             .await?;
         Ok(resp.text())
     }
@@ -940,10 +1068,10 @@ impl LlmProvider for OpenAIProvider {
         system: Option<SystemPrompt>,
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
-        _thinking: Option<ThinkingConfig>, // not supported by OpenAI Responses API
+        thinking: Option<ThinkingConfig>,
         session_id: Option<&str>,
     ) -> Result<MessageResponse> {
-        self.send_request_internal(messages, system, tools, tool_choice, session_id)
+        self.send_request_internal(messages, system, tools, tool_choice, thinking, session_id)
             .await
     }
 
@@ -953,10 +1081,10 @@ impl LlmProvider for OpenAIProvider {
         system: Option<SystemPrompt>,
         tools: Vec<ToolDefinition>,
         tool_choice: Option<ToolChoice>,
-        _thinking: Option<ThinkingConfig>,
+        thinking: Option<ThinkingConfig>,
         session_id: Option<&str>,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        self.stream_request_internal(messages, system, tools, tool_choice, session_id)
+        self.stream_request_internal(messages, system, tools, tool_choice, thinking, session_id)
             .await
     }
 

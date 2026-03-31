@@ -122,7 +122,7 @@ let llm = OpenAIProvider::with_auth_provider(|| async {
 
 ### Notes
 
-- **Thinking / extended reasoning**: `ThinkingConfig` is silently ignored — OpenAI o-series reasoning is handled by the model automatically and is not configurable via this API.
+- **Thinking / reasoning**: `ThinkingConfig` is fully supported. The budget maps to OpenAI's `reasoning.effort` parameter (`low`, `medium`, `high`) and reasoning summaries are streamed as thinking blocks. See [Extended Thinking](#extended-thinking) for budget-to-effort mapping.
 - **Prompt caching**: OpenAI does not use Anthropic-style prompt caching. Disable it in `AgentConfig` to avoid unnecessary overhead:
   ```rust
   let config = AgentConfig::new().with_prompt_caching(false);
@@ -147,7 +147,7 @@ swappable.swap(gemini_provider).await;
 
 ## Extended Thinking
 
-Supported by AnthropicProvider and GeminiProvider:
+Supported by all three providers:
 
 ```rust
 use picrust::llm::ThinkingConfig;
@@ -172,9 +172,14 @@ let config = AgentConfig::new()
   - `8193+` → `high`
 - **Gemini 2.5 models**: Uses numeric budget directly
 
-**OpenAIProvider**: `ThinkingConfig` is ignored. o-series models (o3, o4-mini, etc.) reason automatically — there is no token budget to configure via the Responses API.
+**OpenAIProvider**: Budget maps to `reasoning.effort` and automatically requests reasoning summaries:
+- `0-2048` → `low`
+- `2049-8192` → `medium`
+- `8193+` → `high`
 
-The conversion is automatic based on the model name, so you use the same API for Anthropic and Gemini.
+Reasoning summaries are streamed as `ContentBlock::Thinking` blocks, and reasoning tokens are tracked in `Usage.thoughts_token_count`.
+
+The conversion is automatic based on the provider, so you use the same `.with_thinking()` API for all three providers.
 
 ## Message Types
 

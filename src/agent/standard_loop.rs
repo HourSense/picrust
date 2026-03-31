@@ -135,9 +135,43 @@ impl StandardAgent {
 
                     // Process the user message (if not blocked by hook)
                     if should_process {
-                        if let Err(e) = self.process_turn(&mut internals, &current_text).await {
-                            tracing::error!("[StandardAgent] Error processing turn: {}", e);
-                            internals.send_error(format!("Error: {}", e));
+                        let retry_config = &self.config.turn_retry;
+                        let mut attempt = 0u32;
+                        let mut first_attempt = true;
+                        loop {
+                            match self.process_turn(&mut internals, &current_text, first_attempt).await {
+                                Ok(()) => break,
+                                Err(e) => {
+                                    first_attempt = false;
+                                    attempt += 1;
+                                    let err_msg = e.to_string();
+                                    let is_transient = err_msg.contains("error decoding response body")
+                                        || err_msg.contains("connection")
+                                        || err_msg.contains("timeout")
+                                        || err_msg.contains("broken pipe")
+                                        || err_msg.contains("reset by peer")
+                                        || err_msg.contains("stream")
+                                        || err_msg.contains("hyper")
+                                        || err_msg.contains("io error");
+
+                                    if retry_config.enabled && is_transient && attempt < retry_config.max_retries {
+                                        tracing::warn!(
+                                            "[StandardAgent] Transient error on attempt {}/{}: {}. Retrying in {}s...",
+                                            attempt, retry_config.max_retries, e, retry_config.retry_delay_secs
+                                        );
+                                        internals.send_status(format!(
+                                            "Connection issue, retrying... (attempt {}/{})",
+                                            attempt, retry_config.max_retries
+                                        ));
+                                        tokio::time::sleep(std::time::Duration::from_secs(retry_config.retry_delay_secs)).await;
+                                        continue;
+                                    }
+
+                                    tracing::error!("[StandardAgent] Error processing turn: {}", e);
+                                    internals.send_error(format!("Error: {}", e));
+                                    break;
+                                }
+                            }
                         }
 
                         if self.config.auto_name_conversation && internals.context.current_turn == 0
@@ -226,35 +260,41 @@ impl StandardAgent {
     }
 
     /// Process a single user turn (may involve multiple LLM calls for tool use)
-    async fn process_turn(&self, internals: &mut AgentInternals, user_input: &str) -> Result<()> {
-        // Check if input contains attachment tags and process them
-        let user_message = if user_input.contains("<vibe-work-attachment>") {
-            tracing::info!("[StandardAgent] Processing attachments in user input");
+    ///
+    /// `add_user_message`: true on the first attempt, false on retries to avoid
+    /// duplicating the user message in session history.
+    async fn process_turn(&self, internals: &mut AgentInternals, user_input: &str, add_user_message: bool) -> Result<()> {
+        // Only add the user message on the first attempt (not on retries)
+        if add_user_message {
+            // Check if input contains attachment tags and process them
+            let user_message = if user_input.contains("<vibe-work-attachment>") {
+                tracing::info!("[StandardAgent] Processing attachments in user input");
 
-            // Get base directory from current working directory
-            let base_dir = std::env::current_dir()
-                .unwrap_or_else(|_| std::path::PathBuf::from("."))
-                .to_string_lossy()
-                .to_string();
+                // Get base directory from current working directory
+                let base_dir = std::env::current_dir()
+                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    .to_string_lossy()
+                    .to_string();
 
-            // Process attachments
-            let attachment_blocks = process_attachments(user_input, &base_dir);
+                // Process attachments
+                let attachment_blocks = process_attachments(user_input, &base_dir);
 
-            // Build message blocks: original text first, then attachments
-            let mut blocks = vec![ContentBlock::Text {
-                text: user_input.to_string(),
-                cache_control: None,
-            }];
-            blocks.extend(attachment_blocks);
+                // Build message blocks: original text first, then attachments
+                let mut blocks = vec![ContentBlock::Text {
+                    text: user_input.to_string(),
+                    cache_control: None,
+                }];
+                blocks.extend(attachment_blocks);
 
-            Message::user_with_blocks(blocks)
-        } else {
-            // No attachments, use simple text message
-            Message::user(user_input)
-        };
+                Message::user_with_blocks(blocks)
+            } else {
+                // No attachments, use simple text message
+                Message::user(user_input)
+            };
 
-        // Add user message to history
-        internals.session.write().await.add_message(user_message)?;
+            // Add user message to history
+            internals.session.write().await.add_message(user_message)?;
+        }
 
         // Get tool definitions
         let tool_definitions = self.config.tool_definitions();

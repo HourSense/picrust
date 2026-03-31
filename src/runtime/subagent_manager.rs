@@ -213,6 +213,7 @@ mod tests {
             "test-agent",
             "Test",
             "Test",
+            "",
             storage,
         )
         .unwrap();

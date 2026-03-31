@@ -326,6 +326,7 @@ mod tests {
             "test-agent",
             "Test Agent",
             "A test agent",
+            "",
             storage,
         )
         .unwrap();
@@ -401,6 +402,7 @@ mod tests {
             "test-agent",
             "Test",
             "Test",
+            "",
             storage,
         )
         .unwrap();

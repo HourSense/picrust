@@ -31,6 +31,6 @@ mod config;
 mod executor;
 mod standard_loop;
 
-pub use config::AgentConfig;
+pub use config::{AgentConfig, TurnRetryConfig};
 pub use executor::ToolExecutor;
 pub use standard_loop::StandardAgent;

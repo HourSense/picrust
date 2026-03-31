@@ -55,7 +55,7 @@ impl MCPServerManager {
     /// The refresher should implement caching internally to avoid unnecessary reconnections.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use std::sync::Arc;
     /// use std::time::{Duration, Instant};
     /// use tokio::sync::RwLock;

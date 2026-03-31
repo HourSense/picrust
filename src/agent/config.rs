@@ -101,6 +101,27 @@ pub struct AgentConfig {
     ///
     /// This can be changed at runtime via `AgentHandle::set_dangerous_skip_permissions()`.
     pub dangerous_skip_permissions: bool,
+
+    /// Turn retry configuration.
+    ///
+    /// When a turn fails due to a network/streaming error, the agent will retry
+    /// the same LLM call up to `max_retries` times with `retry_delay_secs` seconds
+    /// between attempts. Only retries on transient errors (stream decode, connection
+    /// drops, timeouts) — not on API rejections or invalid requests.
+    ///
+    /// **Default: 3 retries, 15 seconds between attempts**
+    pub turn_retry: TurnRetryConfig,
+}
+
+/// Configuration for automatic turn retries on transient errors.
+#[derive(Debug, Clone)]
+pub struct TurnRetryConfig {
+    /// Whether retry is enabled. Default: true
+    pub enabled: bool,
+    /// Maximum number of retry attempts. Default: 3
+    pub max_retries: u32,
+    /// Seconds to wait between retry attempts. Default: 15
+    pub retry_delay_secs: u64,
 }
 
 impl AgentConfig {
@@ -123,6 +144,7 @@ impl AgentConfig {
             naming_llm: None,
             hook_short_circuit: false, // Safe default: all hooks run
             dangerous_skip_permissions: false, // Safe default: permissions enforced
+            turn_retry: TurnRetryConfig::default(),
         }
     }
 
@@ -340,6 +362,27 @@ impl AgentConfig {
         self
     }
 
+    /// Configure turn retry behavior for transient errors
+    ///
+    /// When a turn fails due to a network/streaming error, the agent will retry
+    /// automatically. Use this to customize the retry behavior.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Custom retry: 5 attempts, 10 seconds apart
+    /// let config = AgentConfig::new()
+    ///     .with_turn_retry(TurnRetryConfig { enabled: true, max_retries: 5, retry_delay_secs: 10 });
+    ///
+    /// // Disable retries entirely
+    /// let config = AgentConfig::new()
+    ///     .with_turn_retry(TurnRetryConfig { enabled: false, ..Default::default() });
+    /// ```
+    pub fn with_turn_retry(mut self, config: TurnRetryConfig) -> Self {
+        self.turn_retry = config;
+        self
+    }
+
     /// Get tool definitions (empty vec if no tools)
     pub fn tool_definitions(&self) -> Vec<crate::llm::ToolDefinition> {
         self.tools
@@ -352,6 +395,16 @@ impl AgentConfig {
 impl Default for AgentConfig {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Default for TurnRetryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_retries: 3,
+            retry_delay_secs: 15,
+        }
     }
 }
 
@@ -370,6 +423,7 @@ impl std::fmt::Debug for AgentConfig {
             .field("naming_llm", &self.naming_llm.as_ref().map(|l| l.model()))
             .field("hook_short_circuit", &self.hook_short_circuit)
             .field("dangerous_skip_permissions", &self.dangerous_skip_permissions)
+            .field("turn_retry", &self.turn_retry)
             .finish()
     }
 }

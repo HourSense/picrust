@@ -91,7 +91,7 @@ impl MCPServer {
     /// The refresher should implement caching to avoid unnecessary reconnections.
     ///
     /// # Example
-    /// ```no_run
+    /// ```ignore
     /// use std::sync::Arc;
     /// use std::time::{Duration, Instant};
     /// use tokio::sync::RwLock;

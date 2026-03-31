@@ -106,11 +106,12 @@ async fn main() -> Result<()> {
         "gemini-test-agent",
         "Gemini Test Agent",
         "Non-interactive test for GeminiProvider",
+        SYSTEM_PROMPT,
         storage,
     )?;
 
     // --- Configure agent ---
-    let mut config = AgentConfig::new(SYSTEM_PROMPT)
+    let mut config = AgentConfig::new()
         .with_hooks(hooks)
         .with_streaming(use_streaming)
         .with_prompt_caching(false) // Gemini doesn't use Anthropic-style caching

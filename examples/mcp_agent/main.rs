@@ -197,6 +197,7 @@ async fn main() -> Result<()> {
             "mcp-agent",
             "MCP Agent",
             "An agent demonstrating MCP integration",
+            SYSTEM_PROMPT,
             storage,
         )?;
         println!("[Setup] New session: {}", session.session_id());
@@ -209,7 +210,7 @@ async fn main() -> Result<()> {
     let no_cache = args.iter().any(|a| a == "--no-cache");
     let caching = !no_cache;
 
-    let mut config = AgentConfig::new(SYSTEM_PROMPT)
+    let mut config = AgentConfig::new()
         .with_tools(tools)
         .with_hooks(hooks)
         .with_debug(true)
